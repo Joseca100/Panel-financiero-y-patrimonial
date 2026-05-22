@@ -1,0 +1,2194 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Panel financiero y patrimonial de José Carlos</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22%2310b981%22><circle cx=%2212%22 cy=%2212%22 r=%2210%22/></svg>" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.24.6/babel.min.js"></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "react":              "https://esm.sh/react@18.3.1",
+      "react-dom/client":   "https://esm.sh/react-dom@18.3.1/client?external=react",
+      "recharts":           "https://esm.sh/recharts@2.12.7?external=react,react-dom",
+      "lucide-react":       "https://esm.sh/lucide-react@0.400.0?external=react"
+    }
+  }
+  </script>
+  <style>
+    body { background: #09090b; color: #f4f4f5; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
+    #loading { display: flex; height: 100vh; align-items: center; justify-content: center; gap: 12px; font-size: 14px; color: #71717a; }
+    #loading .spin { width: 18px; height: 18px; border: 2px solid #27272a; border-top-color: #10b981; border-radius: 50%; animation: s 0.8s linear infinite; }
+    @keyframes s { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div id="root">
+    <div id="loading"><div class="spin"></div> Cargando Panel financiero…</div>
+  </div>
+  <script type="text/babel" data-type="module" data-presets="react">
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { createRoot } from "react-dom/client";
+import {
+  PieChart, Pie, Cell, AreaChart, Area, BarChart, Bar,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  ReferenceLine, LineChart, Line
+} from "recharts";
+import {
+  Wallet, TrendingUp, Target, Upload, Edit3, X, Plus, AlertCircle,
+  Calculator, Activity, FileText, Download, Sun, Moon, Home,
+  PiggyBank, Briefcase, Settings, Trash2, Save, Database, CheckCircle2,
+  Info, Percent, BarChart3, LineChart as LineIcon, Compass, Flag,
+  Landmark, CreditCard, Banknote, Receipt, Filter, ArrowDownRight,
+  ArrowUpRight, Building2, ChevronRight, ArrowRightLeft, Scale
+} from "lucide-react";
+
+
+/* =========================================================================
+   STORAGE
+   ========================================================================= */
+const STORAGE_KEY = "boglehead_dashboard_v3";
+
+const storageAPI = {
+  async get() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { console.error("Storage read error", e); return null; }
+  },
+  async set(data) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      return true;
+    } catch (e) { console.error("Storage write error", e); return false; }
+  },
+  async clear() {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      return true;
+    } catch (e) { return false; }
+  }
+};
+
+/* =========================================================================
+   CONSTANTES Y MOCK DATA
+   ========================================================================= */
+const ASSET_CLASSES = {
+  RV_GLOBAL: { key: "RV_GLOBAL", label: "RV Global Desarrollados", color: "#10b981", short: "RV Global" },
+  RV_EMERGING: { key: "RV_EMERGING", label: "RV Mercados Emergentes", color: "#f59e0b", short: "RV Emerg." },
+  RF_GLOBAL: { key: "RF_GLOBAL", label: "RF Global Cubierta", color: "#3b82f6", short: "RF" },
+};
+
+const INITIAL_FUNDS = [
+  { id: "f1", name: "Vanguard Global Stock Index Fund EUR Acc", isin: "IE00B03HD191", assetClass: "RV_GLOBAL", invested: 51497.00, marketValue: 64247.20, ter: 0.18, monthlyContrib: 450 },
+  { id: "f2", name: "Vanguard Emerging Markets Stock Index Fund EUR Acc", isin: "IE0031786696", assetClass: "RV_EMERGING", invested: 6720.61, marketValue: 8828.96, ter: 0.23, monthlyContrib: 50 },
+  { id: "f3", name: "Vanguard Global Bond Index Fund EUR Hedged Acc", isin: "IE00B18GC888", assetClass: "RF_GLOBAL", invested: 55711.75, marketValue: 56115.15, ter: 0.15, monthlyContrib: 500 },
+];
+
+const INITIAL_CONFIG = {
+  age: 52,
+  retirementAge: 65,
+  yearsToRetirement: 13,
+  targetAllocation: { RV_GLOBAL: 51, RV_EMERGING: 7, RF_GLOBAL: 42 },
+  rebalanceBand: 5,
+  nominalReturn: 6.5,
+  inflation: 2.5,
+  annualRetirementExpenses: 30000,
+  swrRate: 4.0,
+  pensionMonthlyDeflated: 3409.16,
+  pensionRetirementYear: 2039,
+  includePension: true,
+  theme: "dark",
+  activeTab: "investments",
+};
+
+const INITIAL_ACCOUNTS = [
+  { id: "a1", name: "Ibercaja", balance: 8500, type: "Corriente" },
+  { id: "a2", name: "BBVA", balance: 3200, type: "Corriente" },
+  { id: "a3", name: "Banco Sabadell", balance: 1800, type: "Ahorro" },
+  { id: "a4", name: "MyInvestor", balance: 1500, type: "Remunerada" },
+];
+
+const INITIAL_MORTGAGE = {
+  propertyValue: 280000,
+  pendingCapital: 110000,
+  tin: 2.5,            // %
+  monthlyPayment: 732, // aproximado, recalculable
+  remainingYears: 15,
+  remainingMonths: 0,
+};
+
+const CATEGORIES = {
+  INGRESOS:        { color: "#10b981", label: "Ingresos",          isIncome: true },
+  ALIMENTACION:    { color: "#f59e0b", label: "Alimentación" },
+  VIVIENDA:        { color: "#3b82f6", label: "Vivienda" },
+  OCIO:            { color: "#a78bfa", label: "Ocio" },
+  TRANSPORTE:      { color: "#06b6d4", label: "Transporte" },
+  SALUD:           { color: "#ec4899", label: "Salud" },
+  SEGUROS:         { color: "#f43f5e", label: "Seguros" },
+  SERVICIOS:       { color: "#8b5cf6", label: "Servicios" },
+  RESTAURACION:    { color: "#fb923c", label: "Restauración" },
+  ROPA:            { color: "#84cc16", label: "Ropa" },
+  OTROS:           { color: "#71717a", label: "Otros" },
+  TRASPASO:        { color: "#94a3b8", label: "Traspaso Interno", isTransfer: true },
+};
+
+const CATEGORY_RULES = [
+  // Traspasos internos (PRIORIDAD MÁXIMA)
+  { kw: ["traspaso", "transferencia propia", "trf propia", "trsfa propia"], cat: "TRASPASO" },
+  { kw: ["ibercaja", "bbva", "sabadell", "myinvestor"], cat: "TRASPASO" },
+  // Ingresos
+  { kw: ["nómina", "nomina", "salario", "haberes", "ingreso"], cat: "INGRESOS" },
+  { kw: ["devolución", "devolucion", "abono", "reembolso"], cat: "INGRESOS" },
+  // Alimentación
+  { kw: ["mercadona", "carrefour", "lidl", "dia", "alcampo", "ahorramas", "consum", "supermercado", "casa pipi", "frutería", "fruteria"], cat: "ALIMENTACION" },
+  // Restauración
+  { kw: ["restaurante", "bar ", "cafetería", "cafeteria", "telepizza", "mcdonald", "burger", "starbucks", "glovo", "uber eats", "just eat"], cat: "RESTAURACION" },
+  // Vivienda
+  { kw: ["hipoteca", "alquiler", "comunidad", "ibi", "iberdrola", "endesa", "naturgy", "agua", "gas"], cat: "VIVIENDA" },
+  // Ocio
+  { kw: ["netflix", "spotify", "hbo", "disney", "amazon prime", "cine", "teatro", "viaje", "hotel", "booking", "airbnb"], cat: "OCIO" },
+  // Transporte
+  { kw: ["repsol", "cepsa", "shell", "galp", "gasolinera", "renfe", "uber", "cabify", "taxi", "parking", "via-t", "via t"], cat: "TRANSPORTE" },
+  // Salud
+  { kw: ["farmacia", "clínica", "clinica", "médico", "medico", "dentista", "óptica", "optica"], cat: "SALUD" },
+  // Seguros
+  { kw: ["seguro", "mapfre", "mutua", "sanitas", "adeslas", "axa", "allianz"], cat: "SEGUROS" },
+  // Servicios
+  { kw: ["movistar", "vodafone", "orange", "yoigo", "masmovil", "internet", "fibra", "amazon", "el corte inglés", "el corte ingles"], cat: "SERVICIOS" },
+  // Ropa
+  { kw: ["zara", "h&m", "decathlon", "primark", "mango", "uniqlo"], cat: "ROPA" },
+];
+
+const classifyTransaction = (concept) => {
+  const lc = (concept || "").toLowerCase();
+  for (const rule of CATEGORY_RULES) {
+    if (rule.kw.some(k => lc.includes(k))) return rule.cat;
+  }
+  return "OTROS";
+};
+
+// Mock transactions: ~25 movimientos entre febrero y mayo de 2026
+const INITIAL_TRANSACTIONS = [
+  // Mayo 2026
+  { id: "t1",  date: "2026-05-01", concept: "Nómina mensual",                 amount: 2850, account: "Ibercaja" },
+  { id: "t2",  date: "2026-05-02", concept: "Hipoteca mensual",              amount: -732,  account: "Ibercaja" },
+  { id: "t3",  date: "2026-05-04", concept: "Mercadona Vallecas",            amount: -94.30, account: "BBVA" },
+  { id: "t4",  date: "2026-05-05", concept: "Netflix suscripción",           amount: -15.99, account: "BBVA" },
+  { id: "t5",  date: "2026-05-07", concept: "Traspaso a MyInvestor",         amount: -1000, account: "Ibercaja" },
+  { id: "t6",  date: "2026-05-09", concept: "Iberdrola luz",                 amount: -68.50, account: "Ibercaja" },
+  { id: "t7",  date: "2026-05-12", concept: "Carrefour compra semanal",      amount: -125.40, account: "BBVA" },
+  { id: "t8",  date: "2026-05-14", concept: "Repsol gasolinera",             amount: -65.00, account: "BBVA" },
+  { id: "t9",  date: "2026-05-18", concept: "Restaurante La Tagliatella",    amount: -42.80, account: "Sabadell" },
+  { id: "t10", date: "2026-05-19", concept: "Spotify Premium",               amount: -9.99, account: "BBVA" },
+  // Abril 2026
+  { id: "t11", date: "2026-04-01", concept: "Nómina mensual",                amount: 2850, account: "Ibercaja" },
+  { id: "t12", date: "2026-04-02", concept: "Hipoteca mensual",              amount: -732,  account: "Ibercaja" },
+  { id: "t13", date: "2026-04-04", concept: "Mercadona",                     amount: -88.20, account: "BBVA" },
+  { id: "t14", date: "2026-04-06", concept: "Mapfre seguro hogar",           amount: -245.00, account: "Ibercaja" },
+  { id: "t15", date: "2026-04-08", concept: "Traspaso desde BBVA",           amount: 500, account: "Ibercaja" },
+  { id: "t16", date: "2026-04-08", concept: "Transferencia propia a Ibercaja", amount: -500, account: "BBVA" },
+  { id: "t17", date: "2026-04-12", concept: "Decathlon zapatillas",          amount: -89.95, account: "BBVA" },
+  { id: "t18", date: "2026-04-15", concept: "Movistar fibra+móvil",          amount: -52.00, account: "Ibercaja" },
+  { id: "t19", date: "2026-04-22", concept: "Farmacia central",              amount: -23.45, account: "BBVA" },
+  // Marzo 2026
+  { id: "t20", date: "2026-03-01", concept: "Nómina mensual",                amount: 2850, account: "Ibercaja" },
+  { id: "t21", date: "2026-03-02", concept: "Hipoteca mensual",              amount: -732,  account: "Ibercaja" },
+  { id: "t22", date: "2026-03-05", concept: "Carrefour",                     amount: -101.30, account: "BBVA" },
+  { id: "t23", date: "2026-03-10", concept: "Hotel Booking Lisboa",          amount: -340.00, account: "BBVA" },
+  { id: "t24", date: "2026-03-18", concept: "Renfe AVE Madrid-Bcn",          amount: -120.00, account: "BBVA" },
+  { id: "t25", date: "2026-03-25", concept: "Devolución compra Amazon",      amount: 32.40, account: "BBVA" },
+  // Febrero 2026
+  { id: "t26", date: "2026-02-01", concept: "Nómina mensual",                amount: 2850, account: "Ibercaja" },
+  { id: "t27", date: "2026-02-02", concept: "Hipoteca mensual",              amount: -732, account: "Ibercaja" },
+  { id: "t28", date: "2026-02-10", concept: "Mercadona",                     amount: -97.60, account: "BBVA" },
+  { id: "t29", date: "2026-02-14", concept: "Restaurante Casa Lucio",        amount: -120.00, account: "Sabadell" },
+  { id: "t30", date: "2026-02-20", concept: "Iberdrola luz",                 amount: -75.20, account: "Ibercaja" },
+].map(t => ({ ...t, category: classifyTransaction(t.concept) }));
+
+/* =========================================================================
+   THEME TOKENS
+   ========================================================================= */
+const T = {
+  dark: {
+    bg: "bg-zinc-950", text: "text-zinc-100",
+    textMuted: "text-zinc-500", textSubtle: "text-zinc-400", textFaint: "text-zinc-600",
+    border: "border-zinc-800", borderSoft: "border-zinc-800/60", borderHover: "hover:border-zinc-700",
+    card: "bg-zinc-900/40", cardHover: "hover:bg-zinc-900/40", cardSubtle: "bg-zinc-900/60",
+    cardHoverRow: "hover:bg-zinc-900/40",
+    input: "bg-zinc-900 border-zinc-800", inputFocusEmerald: "focus:border-emerald-400/60",
+    headerBg: "bg-zinc-950/80", headerBorder: "border-zinc-800/80",
+    iconBgZinc: "bg-zinc-800 text-zinc-400",
+    chipBg: "bg-zinc-900 border-zinc-800", chipHover: "hover:bg-zinc-800/60",
+    footerBorder: "border-zinc-800/60",
+    tooltipBg: "#18181b", tooltipBorder: "#3f3f46", tooltipText: "#e4e4e7",
+    chartGrid: "#27272a", chartAxis: "#71717a", referenceText: "#a1a1aa",
+    modalBg: "bg-zinc-950 border-zinc-800", modalOverlay: "bg-black/60",
+    cardSubtleBorder: "border-zinc-800",
+    primaryAction: "bg-emerald-400/10 border-emerald-400/40 text-emerald-300 hover:bg-emerald-400/20",
+    primaryActionStrong: "bg-emerald-400/20 border-emerald-400/40 text-emerald-300 hover:bg-emerald-400/30",
+    progressTrack: "bg-zinc-800",
+    rebalanceActive: "bg-emerald-400/10 border-emerald-400/40 text-emerald-300",
+    rebalanceInactive: "bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-700",
+    tabActive: "bg-emerald-400/10 text-emerald-300 border-emerald-400/40",
+    tabInactive: "text-zinc-500 hover:text-zinc-300 border-transparent",
+  },
+  light: {
+    bg: "bg-stone-50", text: "text-stone-900",
+    textMuted: "text-stone-500", textSubtle: "text-stone-600", textFaint: "text-stone-400",
+    border: "border-stone-200", borderSoft: "border-stone-200/80", borderHover: "hover:border-stone-300",
+    card: "bg-white", cardHover: "hover:bg-stone-50", cardSubtle: "bg-stone-100/70",
+    cardHoverRow: "hover:bg-stone-50",
+    input: "bg-white border-stone-200", inputFocusEmerald: "focus:border-emerald-500/60",
+    headerBg: "bg-stone-50/85", headerBorder: "border-stone-200",
+    iconBgZinc: "bg-stone-200 text-stone-600",
+    chipBg: "bg-white border-stone-200", chipHover: "hover:bg-stone-100",
+    footerBorder: "border-stone-200",
+    tooltipBg: "#ffffff", tooltipBorder: "#d6d3d1", tooltipText: "#1c1917",
+    chartGrid: "#e7e5e4", chartAxis: "#78716c", referenceText: "#57534e",
+    modalBg: "bg-white border-stone-200", modalOverlay: "bg-stone-900/30",
+    cardSubtleBorder: "border-stone-200",
+    primaryAction: "bg-emerald-600/10 border-emerald-600/40 text-emerald-700 hover:bg-emerald-600/15",
+    primaryActionStrong: "bg-emerald-600/15 border-emerald-600/50 text-emerald-700 hover:bg-emerald-600/25",
+    progressTrack: "bg-stone-200",
+    rebalanceActive: "bg-emerald-600/10 border-emerald-600/40 text-emerald-700",
+    rebalanceInactive: "bg-white border-stone-200 text-stone-500 hover:border-stone-300",
+    tabActive: "bg-emerald-600/10 text-emerald-700 border-emerald-600/40",
+    tabInactive: "text-stone-500 hover:text-stone-800 border-transparent",
+  },
+};
+
+/* =========================================================================
+   FORMAT
+   ========================================================================= */
+const fmtEUR = (n, opts = {}) => {
+  if (!isFinite(n)) return "—";
+  const { decimals = 0 } = opts;
+  return new Intl.NumberFormat("es-ES", {
+    style: "currency", currency: "EUR",
+    minimumFractionDigits: decimals, maximumFractionDigits: decimals,
+  }).format(n);
+};
+const fmtPct = (n, decimals = 1) => {
+  if (!isFinite(n)) return "—";
+  return `${n.toFixed(decimals).replace(".", ",")} %`;
+};
+const fmtMonthYear = (dateStr) => {
+  const d = new Date(dateStr);
+  return d.toLocaleDateString("es-ES", { month: "short", year: "numeric" });
+};
+const monthKey = (dateStr) => dateStr.substring(0, 7);
+
+/* =========================================================================
+   HIPOTECA MATH (sistema francés)
+   ========================================================================= */
+// Cuota mensual de un préstamo (PMT)
+const pmt = (rate, n, pv) => {
+  if (rate === 0) return pv / n;
+  return pv * rate * Math.pow(1 + rate, n) / (Math.pow(1 + rate, n) - 1);
+};
+// Número de períodos para amortizar (NPER) dada cuota y capital
+const nper = (rate, payment, pv) => {
+  if (rate === 0) return pv / payment;
+  if (payment <= pv * rate) return Infinity;
+  return Math.log(payment / (payment - pv * rate)) / Math.log(1 + rate);
+};
+// Intereses totales pagados (cuota * meses - capital)
+const totalInterest = (capital, payment, months) => payment * months - capital;
+
+/* =========================================================================
+   APP PRINCIPAL
+   ========================================================================= */
+function App() {
+  const [funds, setFunds] = useState(INITIAL_FUNDS);
+  const [config, setConfig] = useState(INITIAL_CONFIG);
+  const [accounts, setAccounts] = useState(INITIAL_ACCOUNTS);
+  const [mortgage, setMortgage] = useState(INITIAL_MORTGAGE);
+  const [transactions, setTransactions] = useState(INITIAL_TRANSACTIONS);
+  const [loaded, setLoaded] = useState(false);
+  const [toast, setToast] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const theme = config.theme || "dark";
+  const t = T[theme];
+  const activeTab = config.activeTab || "investments";
+
+  useEffect(() => {
+    (async () => {
+      const data = await storageAPI.get();
+      if (data) {
+        if (data.funds) setFunds(data.funds);
+        if (data.config) setConfig({ ...INITIAL_CONFIG, ...data.config });
+        if (data.accounts) setAccounts(data.accounts);
+        if (data.mortgage) setMortgage({ ...INITIAL_MORTGAGE, ...data.mortgage });
+        if (data.transactions) setTransactions(data.transactions);
+      }
+      setLoaded(true);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!loaded) return;
+    storageAPI.set({ funds, config, accounts, mortgage, transactions });
+  }, [funds, config, accounts, mortgage, transactions, loaded]);
+
+  const showToast = (msg, type = "success") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 2800);
+  };
+
+  const toggleTheme = () => setConfig({ ...config, theme: theme === "dark" ? "light" : "dark" });
+  const setActiveTab = (tab) => setConfig({ ...config, activeTab: tab });
+
+  /* ---------- EXPORT / IMPORT ---------- */
+  const handleExport = () => {
+    const payload = {
+      app: "Panel Financiero JC",
+      version: 3,
+      exportedAt: new Date().toISOString(),
+      funds, config, accounts, mortgage, transactions,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const dateStr = new Date().toISOString().split("T")[0];
+    a.href = url;
+    a.download = `panel-financiero-jc-${dateStr}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast("Backup descargado");
+  };
+
+  const handleImportClick = () => fileInputRef.current?.click();
+
+  const handleImportFile = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result);
+        if (!data || typeof data !== "object") throw new Error("Formato inválido");
+        if (!Array.isArray(data.funds) || !data.config) {
+          throw new Error("El JSON no contiene los campos esperados.");
+        }
+        if (!window.confirm("¿Sobrescribir los datos actuales con los del archivo?")) return;
+        setFunds(data.funds);
+        setConfig({ ...INITIAL_CONFIG, ...data.config });
+        if (data.accounts) setAccounts(data.accounts);
+        if (data.mortgage) setMortgage({ ...INITIAL_MORTGAGE, ...data.mortgage });
+        if (data.transactions) setTransactions(data.transactions);
+        showToast("Datos importados correctamente");
+      } catch (err) {
+        showToast(`Error: ${err.message}`, "error");
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = "";
+  };
+
+  const handleReset = async () => {
+    if (!window.confirm("¿Restablecer todos los datos al estado inicial?")) return;
+    await storageAPI.clear();
+    setFunds(INITIAL_FUNDS);
+    setConfig(INITIAL_CONFIG);
+    setAccounts(INITIAL_ACCOUNTS);
+    setMortgage(INITIAL_MORTGAGE);
+    setTransactions(INITIAL_TRANSACTIONS);
+    showToast("Datos restablecidos");
+  };
+
+  /* ---------- PATRIMONIO NETO GLOBAL (compartido entre pestañas) ---------- */
+  const portfolioValue = funds.reduce((a, f) => a + f.marketValue, 0);
+  const accountsValue = accounts.reduce((a, c) => a + c.balance, 0);
+  const totalAssets = portfolioValue + accountsValue + (mortgage.propertyValue || 0);
+  const totalLiabilities = mortgage.pendingCapital || 0;
+  const netWorth = totalAssets - totalLiabilities;
+
+  return (
+    <div className={`min-h-screen ${t.bg} ${t.text} font-sans antialiased transition-colors duration-200`}
+         style={{ fontFeatureSettings: '"cv11", "ss01"', fontVariantNumeric: "tabular-nums" }}>
+      {/* HEADER */}
+      <header className={`border-b ${t.headerBorder} ${t.headerBg} backdrop-blur sticky top-0 z-30`}>
+        <div className="max-w-[1400px] mx-auto px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-400 to-emerald-600 grid place-items-center shadow-lg shadow-emerald-500/20">
+              <Compass className="w-5 h-5 text-zinc-950" strokeWidth={2.5} />
+            </div>
+            <h1 className="text-base font-semibold tracking-tight">
+              Panel financiero y patrimonial de José Carlos
+            </h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <input ref={fileInputRef} type="file" accept="application/json,.json"
+                   onChange={handleImportFile} className="hidden" />
+            <IconButton t={t} onClick={handleImportClick} icon={<Upload className="w-4 h-4" />} title="Importar JSON" />
+            <IconButton t={t} onClick={handleExport} icon={<Download className="w-4 h-4" />} title="Exportar JSON" />
+            <IconButton t={t} onClick={toggleTheme}
+                        icon={theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                        title={theme === "dark" ? "Modo claro" : "Modo oscuro"} />
+          </div>
+        </div>
+        {/* TABS NAV */}
+        <div className="max-w-[1400px] mx-auto px-6">
+          <nav className="flex items-center gap-1">
+            <TabButton t={t} active={activeTab === "investments"} onClick={() => setActiveTab("investments")}
+                       icon={<Briefcase className="w-4 h-4" />} label="Cartera de inversión" />
+            <TabButton t={t} active={activeTab === "patrimony"} onClick={() => setActiveTab("patrimony")}
+                       icon={<Landmark className="w-4 h-4" />} label="Balance patrimonial e hipoteca" />
+            <TabButton t={t} active={activeTab === "cashflow"} onClick={() => setActiveTab("cashflow")}
+                       icon={<Receipt className="w-4 h-4" />} label="Gastos, ingresos e histórico" />
+          </nav>
+        </div>
+      </header>
+
+      <main className="max-w-[1400px] mx-auto px-6 py-8 space-y-10">
+        {/* Banner de patrimonio neto siempre visible */}
+        <div className={`flex flex-wrap items-center gap-6 p-4 rounded-xl border ${t.borderSoft} ${t.card}`}>
+          <div className="flex items-center gap-3 pr-6 border-r"
+               style={{ borderColor: theme === "dark" ? "#3f3f46" : "#e7e5e4" }}>
+            <Scale className="w-5 h-5 text-emerald-500" />
+            <div>
+              <div className={`text-[11px] uppercase tracking-wider ${t.textMuted}`}>Patrimonio neto</div>
+              <div className="text-xl font-semibold">{fmtEUR(netWorth)}</div>
+            </div>
+          </div>
+          <NetBlock label="Activos totales" value={fmtEUR(totalAssets)} t={t} tone="emerald" />
+          <NetBlock label="Cartera inversión" value={fmtEUR(portfolioValue)} t={t} />
+          <NetBlock label="Saldo cuentas" value={fmtEUR(accountsValue)} t={t} />
+          <NetBlock label="Inmueble" value={fmtEUR(mortgage.propertyValue)} t={t} />
+          <NetBlock label="Pasivos (hipoteca)" value={`-${fmtEUR(mortgage.pendingCapital)}`} t={t} tone="rose" />
+        </div>
+
+        {activeTab === "investments" && (
+          <TabInvestments
+            t={t} funds={funds} setFunds={setFunds} config={config} setConfig={setConfig}
+            showToast={showToast}
+          />
+        )}
+        {activeTab === "patrimony" && (
+          <TabPatrimony
+            t={t} accounts={accounts} setAccounts={setAccounts}
+            mortgage={mortgage} setMortgage={setMortgage}
+            portfolioValue={portfolioValue}
+            nominalReturn={config.nominalReturn}
+            showToast={showToast}
+          />
+        )}
+        {activeTab === "cashflow" && (
+          <TabCashFlow
+            t={t} transactions={transactions} setTransactions={setTransactions}
+            showToast={showToast}
+          />
+        )}
+
+        <footer className={`text-xs ${t.textFaint} pt-4 pb-8 flex items-center justify-between border-t ${t.footerBorder}`}>
+          <span className="flex items-center gap-2">
+            <Database className="w-3 h-3" />
+            Datos guardados localmente. Usa Exportar/Importar JSON para backups portables.
+          </span>
+          <button onClick={handleReset}
+            className={`${t.textFaint} hover:text-rose-500 transition flex items-center gap-1`}>
+            <Trash2 className="w-3 h-3" /> Restablecer todo
+          </button>
+        </footer>
+      </main>
+
+      {toast && (
+        <div className={`fixed bottom-6 right-6 z-50 ${t.modalBg} border rounded-lg px-4 py-3 shadow-xl flex items-center gap-2 text-sm`}>
+          {toast.type === "error"
+            ? <AlertCircle className="w-4 h-4 text-rose-500" />
+            : <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
+          {toast.msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* =========================================================================
+   TAB 1: INVERSIÓN
+   ========================================================================= */
+function TabInvestments({ t, funds, setFunds, config, setConfig, showToast }) {
+  const [editingFund, setEditingFund] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [rebalanceMode, setRebalanceMode] = useState("contribution");
+  const [contributionAmount, setContributionAmount] = useState(1000);
+
+  /* ---------- MÉTRICAS ---------- */
+  const metrics = useMemo(() => {
+    const totalMarket = funds.reduce((a, f) => a + f.marketValue, 0);
+    const totalInvested = funds.reduce((a, f) => a + f.invested, 0);
+    const totalGain = totalMarket - totalInvested;
+    const overallReturnPct = totalInvested > 0 ? (totalGain / totalInvested) * 100 : 0;
+
+    const byClass = {};
+    Object.keys(ASSET_CLASSES).forEach(k => {
+      byClass[k] = { market: 0, invested: 0, weight: 0, target: config.targetAllocation[k] || 0 };
+    });
+    funds.forEach(f => {
+      if (byClass[f.assetClass]) {
+        byClass[f.assetClass].market += f.marketValue;
+        byClass[f.assetClass].invested += f.invested;
+      }
+    });
+    Object.keys(byClass).forEach(k => {
+      byClass[k].weight = totalMarket > 0 ? (byClass[k].market / totalMarket) * 100 : 0;
+      byClass[k].deviation = byClass[k].weight - byClass[k].target;
+      byClass[k].outOfBand = Math.abs(byClass[k].deviation) > config.rebalanceBand;
+    });
+
+    const rvWeight = (byClass.RV_GLOBAL?.weight || 0) + (byClass.RV_EMERGING?.weight || 0);
+    const rfWeight = byClass.RF_GLOBAL?.weight || 0;
+    const rvTarget = (config.targetAllocation.RV_GLOBAL || 0) + (config.targetAllocation.RV_EMERGING || 0);
+    const rfTarget = config.targetAllocation.RF_GLOBAL || 0;
+
+    const totalTerWeighted = funds.reduce((a, f) => a + f.ter * f.marketValue, 0);
+    const weightedTER = totalMarket > 0 ? totalTerWeighted / totalMarket : 0;
+    const monthlyContrib = funds.reduce((a, f) => a + (f.monthlyContrib || 0), 0);
+    const maxDeviation = Object.values(byClass).reduce((m, c) => Math.max(m, Math.abs(c.deviation)), 0);
+    const needsRebalance = Object.values(byClass).some(c => c.outOfBand);
+
+    return {
+      totalMarket, totalInvested, totalGain, overallReturnPct,
+      byClass, rvWeight, rfWeight, rvTarget, rfTarget,
+      weightedTER, monthlyContrib, maxDeviation, needsRebalance,
+    };
+  }, [funds, config]);
+
+  const projection = useMemo(() => {
+    const currentYear = 2026;
+    const yearsBack = 5;
+    const yearsForward = Math.max(config.yearsToRetirement + 25, 30);
+    const monthlyContrib = metrics.monthlyContrib;
+    const annualContrib = monthlyContrib * 12;
+    const r = config.nominalReturn / 100;
+    const infl = config.inflation / 100;
+
+    const out = [];
+    const histRates = [0.082, -0.045, 0.115, 0.063, 0.071];
+    let pastVal = metrics.totalMarket;
+    const pastValues = [metrics.totalMarket];
+    for (let i = 0; i < yearsBack; i++) {
+      const rate = histRates[i] || 0.06;
+      pastVal = (pastVal - annualContrib) / (1 + rate);
+      pastValues.unshift(Math.max(0, pastVal));
+    }
+    for (let i = 0; i <= yearsBack; i++) {
+      out.push({
+        year: currentYear - yearsBack + i,
+        nominal: Math.max(0, pastValues[i]),
+        real: Math.max(0, pastValues[i] / Math.pow(1 + infl, yearsBack - i)),
+      });
+    }
+    let fut = metrics.totalMarket;
+    for (let i = 1; i <= yearsForward; i++) {
+      const willStopContrib = i > config.yearsToRetirement;
+      fut = fut * (1 + r) + (willStopContrib ? 0 : annualContrib);
+      out.push({ year: currentYear + i, nominal: fut, real: fut / Math.pow(1 + infl, i) });
+    }
+    return out;
+  }, [metrics.totalMarket, metrics.monthlyContrib, config]);
+
+  const fire = useMemo(() => {
+    const gastos = config.annualRetirementExpenses;
+    const swr = config.swrRate / 100;
+    const fiClasico = gastos / swr;
+    const progresoClasico = (metrics.totalMarket / fiClasico) * 100;
+    const retiroMensualSeguro = (metrics.totalMarket * swr) / 12;
+    const gap = config.yearsToRetirement;
+    const pensionAnual = config.pensionMonthlyDeflated * 12;
+    const deficitAnual = Math.max(0, gastos - pensionAnual);
+    const capitalEnJubilacion = deficitAnual / swr;
+    const r_real = (1 + config.nominalReturn / 100) / (1 + config.inflation / 100) - 1;
+    const pvGap = gap > 0 && r_real !== 0
+      ? gastos * (1 - Math.pow(1 + r_real, -gap)) / r_real
+      : gastos * gap;
+    const pvCapitalJub = capitalEnJubilacion / Math.pow(1 + r_real, gap);
+    const fiAjustado = pvGap + pvCapitalJub;
+    const progresoAjustado = fiAjustado > 0 ? (metrics.totalMarket / fiAjustado) * 100 : 100;
+    return { fiClasico, progresoClasico, retiroMensualSeguro, fiAjustado, progresoAjustado,
+             pensionAnual, deficitAnual, gap, capitalEnJubilacion };
+  }, [config, metrics.totalMarket]);
+
+  const rebalanceCalc = useMemo(() => {
+    const total = metrics.totalMarket;
+    const classes = Object.keys(ASSET_CLASSES);
+    if (rebalanceMode === "transfer") {
+      const result = classes.map(k => {
+        const targetVal = (config.targetAllocation[k] / 100) * total;
+        const currentVal = metrics.byClass[k].market;
+        const delta = targetVal - currentVal;
+        return { key: k, label: ASSET_CLASSES[k].label, color: ASSET_CLASSES[k].color, currentVal, targetVal, delta };
+      });
+      return { mode: "transfer", items: result };
+    }
+    const X = Math.max(0, contributionAmount);
+    const totalPost = total + X;
+    const deficits = classes.map(k => {
+      const targetVal = (config.targetAllocation[k] / 100) * totalPost;
+      const currentVal = metrics.byClass[k].market;
+      const need = Math.max(0, targetVal - currentVal);
+      return { key: k, currentVal, targetVal, need };
+    });
+    const sumNeeds = deficits.reduce((a, d) => a + d.need, 0);
+    let contribs;
+    if (sumNeeds >= X || X === 0) {
+      contribs = deficits.map(d => ({ ...d, contrib: sumNeeds > 0 ? (d.need / sumNeeds) * X : 0 }));
+    } else {
+      const remainder = X - sumNeeds;
+      contribs = deficits.map(d => {
+        const extra = (config.targetAllocation[d.key] / 100) * remainder;
+        return { ...d, contrib: d.need + extra };
+      });
+    }
+    return {
+      mode: "contribution", X,
+      items: contribs.map(c => ({
+        key: c.key,
+        label: ASSET_CLASSES[c.key].label,
+        color: ASSET_CLASSES[c.key].color,
+        currentVal: c.currentVal,
+        contrib: c.contrib,
+        newVal: c.currentVal + c.contrib,
+        newPct: totalPost > 0 ? ((c.currentVal + c.contrib) / totalPost) * 100 : 0,
+        targetPct: config.targetAllocation[c.key],
+      })),
+    };
+  }, [rebalanceMode, contributionAmount, metrics, config]);
+
+  const glidePath = useMemo(() => {
+    const years = [];
+    for (let age = config.age; age <= config.age + 30; age++) {
+      const rv = Math.max(20, Math.min(90, 110 - age));
+      const rvGlobal = Math.round(rv * 0.88);
+      const rvEmerg = rv - rvGlobal;
+      const rf = 100 - rv;
+      years.push({ age, year: 2026 + (age - config.age),
+        "RV Global": rvGlobal, "RV Emerg.": rvEmerg, "RF": rf });
+    }
+    return years;
+  }, [config.age]);
+
+  const handleSaveFund = (fundData) => {
+    if (fundData.id) {
+      setFunds(funds.map(f => f.id === fundData.id ? fundData : f));
+      showToast("Fondo actualizado");
+    } else {
+      setFunds([...funds, { ...fundData, id: `f${Date.now()}` }]);
+      showToast("Fondo añadido");
+    }
+    setEditingFund(null); setAdding(false);
+  };
+  const handleDeleteFund = (id) => {
+    setFunds(funds.filter(f => f.id !== id));
+    showToast("Fondo eliminado");
+    setEditingFund(null);
+  };
+  const handleBulkUpload = () => {
+    const updated = funds.map(f => {
+      const drift = (Math.random() - 0.4) * 0.05;
+      return { ...f, marketValue: Math.round(f.marketValue * (1 + drift) * 100) / 100 };
+    });
+    setFunds(updated);
+    showToast("Datos actualizados desde archivo CSV (simulado)");
+    setUploadOpen(false);
+  };
+
+  const tooltipStyle = {
+    background: t.tooltipBg, border: `1px solid ${t.tooltipBorder}`,
+    borderRadius: 8, fontSize: 12, color: t.tooltipText,
+  };
+
+  return (
+    <div className="space-y-10">
+      <div className="flex justify-end -mt-4 gap-2">
+        <button onClick={() => setUploadOpen(true)}
+                className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg ${t.chipBg} border ${t.borderHover} ${t.chipHover} transition`}>
+          <FileText className="w-4 h-4" /> Carga masiva
+        </button>
+        <button onClick={() => setSettingsOpen(true)}
+                className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg ${t.chipBg} border ${t.borderHover} ${t.chipHover} transition`}>
+          <Settings className="w-4 h-4" /> Ajustes
+        </button>
+      </div>
+
+      {/* KPIs */}
+      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <KPICard t={t} icon={<Wallet className="w-4 h-4" />}
+          label="Capital total" value={fmtEUR(metrics.totalMarket)}
+          sub={<span className={metrics.totalGain >= 0 ? "text-emerald-500" : "text-rose-500"}>
+            {metrics.totalGain >= 0 ? "+" : ""}{fmtEUR(metrics.totalGain)} ({fmtPct(metrics.overallReturnPct)})
+          </span>} accent="emerald" />
+        <KPICard t={t} icon={<TrendingUp className="w-4 h-4" />}
+          label="Rentabilidad media ponderada" value={fmtPct(metrics.overallReturnPct)}
+          sub={<span className={t.textMuted}>sobre {fmtEUR(metrics.totalInvested)} invertidos</span>} accent="sky" />
+        <KPICard t={t} icon={<Target className="w-4 h-4" />}
+          label="Desviación máx. del objetivo" value={fmtPct(metrics.maxDeviation)}
+          sub={metrics.needsRebalance ? (
+            <span className="text-amber-500 flex items-center gap-1">
+              <AlertCircle className="w-3 h-3" /> Fuera de banda ±{config.rebalanceBand}%
+            </span>
+          ) : (
+            <span className="text-emerald-500 flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3" /> Dentro de banda ±{config.rebalanceBand}%
+            </span>
+          )}
+          accent={metrics.needsRebalance ? "amber" : "emerald"} />
+        <KPICard t={t} icon={<Percent className="w-4 h-4" />}
+          label="TER medio ponderado" value={fmtPct(metrics.weightedTER, 2)}
+          sub={<span className={t.textMuted}>Aport. mensual {fmtEUR(metrics.monthlyContrib)}</span>}
+          accent="zinc" />
+      </section>
+
+      {/* AA + REBALANCEO */}
+      <section className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        <Card t={t} className="lg:col-span-3">
+          <CardHeader t={t} icon={<Activity className="w-4 h-4" />}
+            title="Asset Allocation"
+            subtitle="Distribución actual frente al objetivo Boglehead" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
+            {[
+              { mode: "actual", title: "Actual", value: metrics.rvWeight, rfValue: metrics.rfWeight,
+                data: Object.keys(ASSET_CLASSES).map(k => ({ name: ASSET_CLASSES[k].short, value: metrics.byClass[k].weight, color: ASSET_CLASSES[k].color })),
+                opacity: 1 },
+              { mode: "target", title: "Objetivo", value: metrics.rvTarget, rfValue: metrics.rfTarget,
+                data: Object.keys(ASSET_CLASSES).map(k => ({ name: ASSET_CLASSES[k].short, value: config.targetAllocation[k], color: ASSET_CLASSES[k].color })),
+                opacity: 0.55 },
+            ].map((cfg) => (
+              <div key={cfg.mode} className="flex flex-col items-center">
+                <p className={`text-xs uppercase tracking-wider ${t.textMuted} mb-2`}>{cfg.title}</p>
+                <div className="relative w-full" style={{ height: 220 }}>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie data={cfg.data} dataKey="value" cx="50%" cy="50%"
+                           innerRadius={55} outerRadius={85} paddingAngle={2} stroke="none">
+                        {cfg.data.map((d, i) => <Cell key={i} fill={d.color} opacity={cfg.opacity} />)}
+                      </Pie>
+                      <Tooltip contentStyle={tooltipStyle} formatter={(v) => fmtPct(v)} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <div className="text-2xl font-semibold">{fmtPct(cfg.value)}</div>
+                    <div className={`text-xs ${t.textMuted}`}>RV / {fmtPct(cfg.rfValue)} RF</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-6 space-y-2">
+            {Object.keys(ASSET_CLASSES).map(k => {
+              const c = metrics.byClass[k];
+              return (
+                <div key={k} className="flex items-center gap-4">
+                  <span className="w-3 h-3 rounded-full" style={{ background: ASSET_CLASSES[k].color }} />
+                  <span className={`flex-1 text-sm ${t.textSubtle}`}>{ASSET_CLASSES[k].label}</span>
+                  <span className={`text-sm w-20 text-right ${t.textSubtle}`}>{fmtPct(c.weight)}</span>
+                  <span className={`text-xs ${t.textFaint}`}>vs</span>
+                  <span className={`text-sm w-16 text-right ${t.textSubtle}`}>{fmtPct(c.target)}</span>
+                  <span className={`text-xs w-16 text-right font-medium ${c.outOfBand ? "text-amber-500" : t.textMuted}`}>
+                    {c.deviation >= 0 ? "+" : ""}{c.deviation.toFixed(1)} pp
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+
+        <Card t={t} className="lg:col-span-2">
+          <CardHeader t={t} icon={<Calculator className="w-4 h-4" />}
+            title="Calculadora de Rebalanceo"
+            subtitle="Aportación nueva o traspaso entre fondos" />
+          <div className="flex gap-2 mt-2 mb-4">
+            <button onClick={() => setRebalanceMode("contribution")}
+              className={`flex-1 px-3 py-2 text-xs rounded-lg border transition ${
+                rebalanceMode === "contribution" ? t.rebalanceActive : t.rebalanceInactive
+              }`}>
+              Por aportación nueva
+            </button>
+            <button onClick={() => setRebalanceMode("transfer")}
+              className={`flex-1 px-3 py-2 text-xs rounded-lg border transition ${
+                rebalanceMode === "transfer" ? t.rebalanceActive : t.rebalanceInactive
+              }`}>
+              Por traspaso
+            </button>
+          </div>
+          {rebalanceMode === "contribution" && (
+            <>
+              <div className="mb-4">
+                <label className={`text-xs ${t.textMuted} uppercase tracking-wider`}>Importe a aportar</label>
+                <div className="relative mt-1">
+                  <input type="number" value={contributionAmount}
+                    onChange={(e) => setContributionAmount(parseFloat(e.target.value) || 0)}
+                    className={`w-full ${t.input} border rounded-lg px-3 py-2 pr-10 text-lg font-medium focus:outline-none ${t.inputFocusEmerald}`} />
+                  <span className={`absolute right-3 top-2.5 ${t.textMuted}`}>€</span>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {rebalanceCalc.items.map(item => (
+                  <div key={item.key} className={`p-3 rounded-lg ${t.cardSubtle} border ${t.cardSubtleBorder}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={`text-sm ${t.textSubtle} flex items-center gap-2`}>
+                        <span className="w-2 h-2 rounded-full" style={{ background: item.color }} />
+                        {ASSET_CLASSES[item.key].short}
+                      </span>
+                      <span className="text-base font-semibold text-emerald-500">
+                        +{fmtEUR(item.contrib)}
+                      </span>
+                    </div>
+                    <div className={`text-xs ${t.textMuted} flex justify-between`}>
+                      <span>tras aportación: {fmtPct(item.newPct)}</span>
+                      <span>objetivo: {fmtPct(item.targetPct)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          {rebalanceMode === "transfer" && (
+            <div className="space-y-2">
+              {rebalanceCalc.items.map(item => (
+                <div key={item.key} className={`p-3 rounded-lg ${t.cardSubtle} border ${t.cardSubtleBorder}`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`text-sm ${t.textSubtle} flex items-center gap-2`}>
+                      <span className="w-2 h-2 rounded-full" style={{ background: item.color }} />
+                      {ASSET_CLASSES[item.key].short}
+                    </span>
+                    <span className={`text-base font-semibold ${item.delta >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                      {item.delta >= 0 ? "+" : ""}{fmtEUR(item.delta)}
+                    </span>
+                  </div>
+                  <div className={`text-xs ${t.textMuted} flex justify-between`}>
+                    <span>actual {fmtEUR(item.currentVal)}</span>
+                    <span>objetivo {fmtEUR(item.targetVal)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </section>
+
+      {/* MIS FONDOS */}
+      <section>
+        <Card t={t}>
+          <div className="flex items-center justify-between mb-4">
+            <CardHeader t={t} icon={<Briefcase className="w-4 h-4" />}
+              title="Mis Fondos" subtitle="Pulsa cualquier fondo para editarlo manualmente" noMargin />
+            <button onClick={() => setAdding(true)}
+              className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg border transition ${t.primaryAction}`}>
+              <Plus className="w-4 h-4" /> Nuevo fondo
+            </button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className={`text-xs uppercase tracking-wider ${t.textMuted} border-b ${t.border}`}>
+                  <th className="text-left py-3 pr-4 font-normal">Fondo</th>
+                  <th className="text-left py-3 pr-4 font-normal">Clase</th>
+                  <th className="text-right py-3 pr-4 font-normal">Invertido</th>
+                  <th className="text-right py-3 pr-4 font-normal">Valor mercado</th>
+                  <th className="text-right py-3 pr-4 font-normal">Rentabilidad</th>
+                  <th className="text-right py-3 pr-4 font-normal">TER</th>
+                  <th className="text-right py-3 pr-4 font-normal">Aport./mes</th>
+                  <th className="w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {funds.map(f => {
+                  const gain = f.marketValue - f.invested;
+                  const gainPct = f.invested > 0 ? (gain / f.invested) * 100 : 0;
+                  const cls = ASSET_CLASSES[f.assetClass];
+                  return (
+                    <tr key={f.id} onClick={() => setEditingFund(f)}
+                        className={`border-b ${t.borderSoft} ${t.cardHoverRow} cursor-pointer transition`}>
+                      <td className="py-4 pr-4">
+                        <div className="font-medium">{f.name}</div>
+                        <div className={`text-xs ${t.textMuted} mt-0.5`}>{f.isin}</div>
+                      </td>
+                      <td className="py-4 pr-4">
+                        <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs"
+                              style={{ background: `${cls.color}1A`, color: cls.color }}>
+                          <span className="w-1.5 h-1.5 rounded-full" style={{ background: cls.color }} />
+                          {cls.short}
+                        </span>
+                      </td>
+                      <td className={`py-4 pr-4 text-right ${t.textSubtle}`}>{fmtEUR(f.invested)}</td>
+                      <td className="py-4 pr-4 text-right font-medium">{fmtEUR(f.marketValue)}</td>
+                      <td className={`py-4 pr-4 text-right font-medium ${gain >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                        {gain >= 0 ? "+" : ""}{fmtPct(gainPct)}
+                        <div className={`text-xs ${t.textMuted} font-normal`}>
+                          {gain >= 0 ? "+" : ""}{fmtEUR(gain)}
+                        </div>
+                      </td>
+                      <td className={`py-4 pr-4 text-right ${t.textSubtle}`}>{fmtPct(f.ter, 2)}</td>
+                      <td className={`py-4 pr-4 text-right ${t.textSubtle}`}>{fmtEUR(f.monthlyContrib)}</td>
+                      <td className="py-4 text-right">
+                        <Edit3 className={`w-4 h-4 ${t.textFaint} inline`} />
+                      </td>
+                    </tr>
+                  );
+                })}
+                <tr className="font-medium">
+                  <td className="py-4 pr-4">Total</td>
+                  <td className="pr-4"></td>
+                  <td className="py-4 pr-4 text-right">{fmtEUR(metrics.totalInvested)}</td>
+                  <td className="py-4 pr-4 text-right">{fmtEUR(metrics.totalMarket)}</td>
+                  <td className={`py-4 pr-4 text-right ${metrics.totalGain >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                    {metrics.totalGain >= 0 ? "+" : ""}{fmtPct(metrics.overallReturnPct)}
+                  </td>
+                  <td className="py-4 pr-4 text-right">{fmtPct(metrics.weightedTER, 2)}</td>
+                  <td className="py-4 pr-4 text-right">{fmtEUR(metrics.monthlyContrib)}</td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </section>
+
+      {/* PROYECCIÓN */}
+      <section>
+        <Card t={t}>
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+            <CardHeader t={t} icon={<LineIcon className="w-4 h-4" />}
+              title="Evolución histórica y proyección futura"
+              subtitle="Interés compuesto sobre tu cartera + aportaciones, con ajuste por inflación"
+              noMargin />
+            <div className="flex items-center gap-3 text-xs">
+              <label className="flex items-center gap-2">
+                <span className={`${t.textMuted} uppercase tracking-wider`}>Rentab. nominal</span>
+                <input type="number" step="0.1" value={config.nominalReturn}
+                  onChange={(e) => setConfig({ ...config, nominalReturn: parseFloat(e.target.value) || 0 })}
+                  className={`w-16 ${t.input} border rounded-md px-2 py-1 text-right`} /> %
+              </label>
+              <label className="flex items-center gap-2">
+                <span className={`${t.textMuted} uppercase tracking-wider`}>Inflación</span>
+                <input type="number" step="0.1" value={config.inflation}
+                  onChange={(e) => setConfig({ ...config, inflation: parseFloat(e.target.value) || 0 })}
+                  className={`w-16 ${t.input} border rounded-md px-2 py-1 text-right`} /> %
+              </label>
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={340}>
+            <AreaChart data={projection} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="gNom" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#10b981" stopOpacity={0.4} />
+                  <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="gReal" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.25} />
+                  <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke={t.chartGrid} strokeDasharray="2 4" vertical={false} />
+              <XAxis dataKey="year" stroke={t.chartAxis} fontSize={11} />
+              <YAxis stroke={t.chartAxis} fontSize={11}
+                     tickFormatter={(v) => v >= 1000000 ? `${(v / 1e6).toFixed(1)}M` : `${(v / 1000).toFixed(0)}k`} />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v, name) => [fmtEUR(v), name]}
+                       labelStyle={{ color: t.referenceText }} />
+              <ReferenceLine x={2026} stroke={t.referenceText} strokeDasharray="3 3"
+                             label={{ value: "hoy", fill: t.referenceText, fontSize: 10 }} />
+              <ReferenceLine x={config.pensionRetirementYear} stroke="#f59e0b" strokeDasharray="3 3"
+                             label={{ value: "jubilación", fill: "#f59e0b", fontSize: 10 }} />
+              <Area type="monotone" dataKey="nominal" stroke="#10b981" strokeWidth={2} fill="url(#gNom)" name="Nominal" />
+              <Area type="monotone" dataKey="real" stroke="#3b82f6" strokeWidth={2} fill="url(#gReal)"
+                    name="Real (€ de hoy)" strokeDasharray="4 2" />
+              <Legend wrapperStyle={{ fontSize: 12, color: t.referenceText }} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </Card>
+      </section>
+
+      {/* PLAN DE RETIRO */}
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card t={t}>
+          <CardHeader t={t} icon={<Flag className="w-4 h-4" />}
+            title="FI Clásico · Regla del 4%"
+            subtitle="Tu número FIRE sin contar la pensión pública" />
+          <RetirementInputs t={t} config={config} setConfig={setConfig} />
+          <FIRESummary t={t} title="Número FI" fiNumber={fire.fiClasico}
+            progress={fire.progresoClasico} monthly={fire.retiroMensualSeguro}
+            currentCapital={metrics.totalMarket} tone="emerald" />
+          <p className={`text-xs ${t.textMuted} leading-relaxed mt-4`}>
+            Capital necesario para retirar el {config.swrRate}% anual de forma sostenible durante 30+ años,
+            según los estudios Trinity / Bengen. No considera otros ingresos.
+          </p>
+        </Card>
+        <Card t={t}>
+          <CardHeader t={t} icon={<PiggyBank className="w-4 h-4" />}
+            title="FI Ajustado por pensión pública"
+            subtitle={`Pensión deflactada estimada: ${fmtEUR(config.pensionMonthlyDeflated)} /mes en € de hoy`} />
+          <div className="grid grid-cols-2 gap-3 mb-4 text-xs">
+            <div className={`p-3 rounded-lg ${t.cardSubtle} border ${t.cardSubtleBorder}`}>
+              <div className={`${t.textMuted} uppercase tracking-wider`}>Gap pre-jubilación</div>
+              <div className="text-lg font-medium mt-1">{fire.gap} años</div>
+              <div className={t.textMuted}>cubre {fmtEUR(config.annualRetirementExpenses)}/año</div>
+            </div>
+            <div className={`p-3 rounded-lg ${t.cardSubtle} border ${t.cardSubtleBorder}`}>
+              <div className={`${t.textMuted} uppercase tracking-wider`}>Déficit post-jubilación</div>
+              <div className="text-lg font-medium mt-1">{fmtEUR(fire.deficitAnual)}/año</div>
+              <div className={t.textMuted}>tras pensión {fmtEUR(fire.pensionAnual)}/año</div>
+            </div>
+          </div>
+          <FIRESummary t={t} title="Número FI ajustado" fiNumber={fire.fiAjustado}
+            progress={fire.progresoAjustado} monthly={fire.retiroMensualSeguro}
+            currentCapital={metrics.totalMarket} tone="sky" />
+        </Card>
+      </section>
+
+      {/* GLIDE PATH */}
+      <section>
+        <Card t={t}>
+          <CardHeader t={t} icon={<BarChart3 className="w-4 h-4" />}
+            title="Glide Path"
+            subtitle="Evolución recomendada del Asset Allocation con la edad (regla 110 − edad, reparto por capitalización)" />
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={glidePath} stackOffset="expand" margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+              <CartesianGrid stroke={t.chartGrid} strokeDasharray="2 4" vertical={false} />
+              <XAxis dataKey="age" stroke={t.chartAxis} fontSize={11} tickFormatter={(v) => `${v}a`} />
+              <YAxis stroke={t.chartAxis} fontSize={11} tickFormatter={(v) => `${Math.round(v * 100)}%`} />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v) => `${v} %`} />
+              <Legend wrapperStyle={{ fontSize: 12, color: t.referenceText }} />
+              <ReferenceLine x={config.age} stroke="#10b981" strokeDasharray="3 3" />
+              <Bar dataKey="RV Global" stackId="a" fill={ASSET_CLASSES.RV_GLOBAL.color} />
+              <Bar dataKey="RV Emerg." stackId="a" fill={ASSET_CLASSES.RV_EMERGING.color} />
+              <Bar dataKey="RF" stackId="a" fill={ASSET_CLASSES.RF_GLOBAL.color} />
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+      </section>
+
+      {(editingFund || adding) && (
+        <FundModal t={t} fund={editingFund}
+          onClose={() => { setEditingFund(null); setAdding(false); }}
+          onSave={handleSaveFund} onDelete={handleDeleteFund} />
+      )}
+      {uploadOpen && <UploadModal t={t} onClose={() => setUploadOpen(false)} onConfirm={handleBulkUpload} />}
+      {settingsOpen && (
+        <SettingsModal t={t} config={config} setConfig={setConfig} onClose={() => setSettingsOpen(false)} />
+      )}
+    </div>
+  );
+}
+
+/* =========================================================================
+   TAB 2: PATRIMONIO E HIPOTECA
+   ========================================================================= */
+function TabPatrimony({ t, accounts, setAccounts, mortgage, setMortgage, portfolioValue, nominalReturn, showToast }) {
+  const [editingAccount, setEditingAccount] = useState(null);
+  const [addingAccount, setAddingAccount] = useState(false);
+  const [extraAmount, setExtraAmount] = useState(5000);
+  const [amortMode, setAmortMode] = useState("plazo"); // 'plazo' | 'cuota'
+
+  const tooltipStyle = {
+    background: t.tooltipBg, border: `1px solid ${t.tooltipBorder}`,
+    borderRadius: 8, fontSize: 12, color: t.tooltipText,
+  };
+
+  /* ---------- Cálculos hipoteca ---------- */
+  const mortgageCalc = useMemo(() => {
+    const totalMonths = Math.max(0, (mortgage.remainingYears || 0) * 12 + (mortgage.remainingMonths || 0));
+    const monthlyRate = (mortgage.tin || 0) / 100 / 12;
+    const capital = mortgage.pendingCapital || 0;
+    // Cuota teórica francesa
+    const theoreticalPayment = totalMonths > 0 ? pmt(monthlyRate, totalMonths, capital) : 0;
+    const monthlyPayment = mortgage.monthlyPayment || theoreticalPayment;
+
+    // Si la cuota es menor que el interés mensual, no amortiza
+    const baseInterest = totalInterest(capital, monthlyPayment, totalMonths);
+    // Fecha estimada de finalización
+    const today = new Date();
+    const endDate = new Date(today.getFullYear(), today.getMonth() + totalMonths, 1);
+
+    // --- Simulación con amortización anticipada
+    const extra = Math.max(0, extraAmount);
+    const newCapital = Math.max(0, capital - extra);
+    let simResult = null;
+    if (extra > 0 && newCapital > 0) {
+      if (amortMode === "cuota") {
+        // Mismo plazo, menor cuota
+        const newPayment = pmt(monthlyRate, totalMonths, newCapital);
+        const newInterest = totalInterest(newCapital, newPayment, totalMonths);
+        simResult = {
+          mode: "cuota",
+          newPayment, newInterest,
+          paymentReduction: monthlyPayment - newPayment,
+          interestSaving: baseInterest - newInterest,
+          monthsSaved: 0,
+          newEndDate: endDate,
+        };
+      } else {
+        // Misma cuota, menor plazo
+        const newMonths = Math.ceil(nper(monthlyRate, monthlyPayment, newCapital));
+        const newInterest = totalInterest(newCapital, monthlyPayment, newMonths);
+        const newEndDate = new Date(today.getFullYear(), today.getMonth() + newMonths, 1);
+        simResult = {
+          mode: "plazo",
+          newMonths, newInterest,
+          monthsSaved: totalMonths - newMonths,
+          interestSaving: baseInterest - newInterest,
+          newPayment: monthlyPayment,
+          paymentReduction: 0,
+          newEndDate,
+        };
+      }
+    } else if (newCapital === 0 && extra > 0) {
+      simResult = { mode: "liquida", interestSaving: baseInterest };
+    }
+
+    // --- Comparativa amortizar vs invertir
+    // Si invertimos los 'extra' € durante los 'totalMonths' restantes a 'nominalReturn'
+    const years = totalMonths / 12;
+    const r = (nominalReturn || 0) / 100;
+    const investedValueAtEnd = extra * Math.pow(1 + r, years);
+    const investGain = investedValueAtEnd - extra;
+    // El "ahorro" de amortizar es interestSaving de la simulación (o equivalente)
+    const amortGain = simResult?.interestSaving || 0;
+
+    return {
+      totalMonths, monthlyRate, capital, theoreticalPayment, monthlyPayment,
+      baseInterest, endDate, simResult,
+      compare: { investedValueAtEnd, investGain, amortGain, years },
+    };
+  }, [mortgage, extraAmount, amortMode, nominalReturn]);
+
+  /* ---------- Composición patrimonio ---------- */
+  const accountsTotal = accounts.reduce((a, c) => a + c.balance, 0);
+  const totalAssets = portfolioValue + accountsTotal + (mortgage.propertyValue || 0);
+  const totalLiab = mortgage.pendingCapital || 0;
+  const netWorth = totalAssets - totalLiab;
+  const ltv = (mortgage.propertyValue > 0) ? (totalLiab / mortgage.propertyValue) * 100 : 0;
+
+  const composition = [
+    { name: "Inversión (cartera)", value: portfolioValue, color: "#10b981" },
+    { name: "Liquidez (cuentas)",  value: accountsTotal,  color: "#3b82f6" },
+    { name: "Inmueble",            value: mortgage.propertyValue || 0, color: "#f59e0b" },
+  ];
+
+  const handleSaveAccount = (acc) => {
+    if (acc.id) {
+      setAccounts(accounts.map(a => a.id === acc.id ? acc : a));
+      showToast("Cuenta actualizada");
+    } else {
+      setAccounts([...accounts, { ...acc, id: `a${Date.now()}` }]);
+      showToast("Cuenta añadida");
+    }
+    setEditingAccount(null); setAddingAccount(false);
+  };
+  const handleDeleteAccount = (id) => {
+    setAccounts(accounts.filter(a => a.id !== id));
+    setEditingAccount(null);
+    showToast("Cuenta eliminada");
+  };
+
+  return (
+    <div className="space-y-10">
+      {/* KPIs PATRIMONIO */}
+      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <KPICard t={t} icon={<Scale className="w-4 h-4" />}
+          label="Patrimonio neto" value={fmtEUR(netWorth)}
+          sub={<span className={t.textMuted}>Activos − pasivos</span>} accent="emerald" />
+        <KPICard t={t} icon={<ArrowUpRight className="w-4 h-4" />}
+          label="Activos totales" value={fmtEUR(totalAssets)}
+          sub={<span className={t.textMuted}>Cartera + liquidez + inmueble</span>} accent="sky" />
+        <KPICard t={t} icon={<ArrowDownRight className="w-4 h-4" />}
+          label="Pasivos (hipoteca)" value={fmtEUR(totalLiab)}
+          sub={<span className={t.textMuted}>Capital pendiente</span>} accent="amber" />
+        <KPICard t={t} icon={<Home className="w-4 h-4" />}
+          label="LTV (loan-to-value)" value={fmtPct(ltv)}
+          sub={<span className={t.textMuted}>Deuda sobre valor del inmueble</span>} accent="zinc" />
+      </section>
+
+      {/* CUENTAS + COMPOSICIÓN */}
+      <section className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        <Card t={t} className="lg:col-span-3">
+          <div className="flex items-center justify-between mb-4">
+            <CardHeader t={t} icon={<CreditCard className="w-4 h-4" />}
+              title="Cuentas bancarias" subtitle="Pulsa una cuenta para editarla" noMargin />
+            <button onClick={() => setAddingAccount(true)}
+              className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg border transition ${t.primaryAction}`}>
+              <Plus className="w-4 h-4" /> Nueva cuenta
+            </button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className={`text-xs uppercase tracking-wider ${t.textMuted} border-b ${t.border}`}>
+                  <th className="text-left py-3 pr-4 font-normal">Entidad</th>
+                  <th className="text-left py-3 pr-4 font-normal">Tipo</th>
+                  <th className="text-right py-3 pr-4 font-normal">Saldo</th>
+                  <th className="text-right py-3 pr-4 font-normal">% liquidez</th>
+                  <th className="w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {accounts.map(a => (
+                  <tr key={a.id} onClick={() => setEditingAccount(a)}
+                      className={`border-b ${t.borderSoft} ${t.cardHoverRow} cursor-pointer transition`}>
+                    <td className="py-3 pr-4 font-medium">{a.name}</td>
+                    <td className={`py-3 pr-4 ${t.textSubtle}`}>{a.type || "—"}</td>
+                    <td className="py-3 pr-4 text-right font-medium">{fmtEUR(a.balance)}</td>
+                    <td className={`py-3 pr-4 text-right ${t.textSubtle}`}>
+                      {accountsTotal > 0 ? fmtPct((a.balance / accountsTotal) * 100) : "—"}
+                    </td>
+                    <td className="py-3 text-right">
+                      <Edit3 className={`w-4 h-4 ${t.textFaint} inline`} />
+                    </td>
+                  </tr>
+                ))}
+                <tr className="font-medium">
+                  <td className="py-3 pr-4">Total liquidez</td>
+                  <td className="pr-4"></td>
+                  <td className="py-3 pr-4 text-right">{fmtEUR(accountsTotal)}</td>
+                  <td className="py-3 pr-4 text-right">100,0 %</td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </Card>
+        <Card t={t} className="lg:col-span-2">
+          <CardHeader t={t} icon={<Activity className="w-4 h-4" />}
+            title="Composición patrimonial"
+            subtitle="Reparto del activo bruto" />
+          <div className="relative w-full mt-2" style={{ height: 240 }}>
+            <ResponsiveContainer width="100%" height={240}>
+              <PieChart>
+                <Pie data={composition.filter(c => c.value > 0)} dataKey="value"
+                     cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={2} stroke="none">
+                  {composition.map((c, i) => <Cell key={i} fill={c.color} />)}
+                </Pie>
+                <Tooltip contentStyle={tooltipStyle} formatter={(v) => fmtEUR(v)} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+              <div className="text-xl font-semibold">{fmtEUR(totalAssets)}</div>
+              <div className={`text-xs ${t.textMuted}`}>Activos</div>
+            </div>
+          </div>
+          <div className="mt-2 space-y-1.5">
+            {composition.map(c => (
+              <div key={c.name} className="flex items-center text-sm">
+                <span className="w-2.5 h-2.5 rounded-full mr-2" style={{ background: c.color }} />
+                <span className={`flex-1 ${t.textSubtle}`}>{c.name}</span>
+                <span>{fmtEUR(c.value)}</span>
+                <span className={`text-xs ml-2 w-14 text-right ${t.textMuted}`}>
+                  {totalAssets > 0 ? fmtPct((c.value / totalAssets) * 100) : "—"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </section>
+
+      {/* HIPOTECA - DATOS */}
+      <section>
+        <Card t={t}>
+          <CardHeader t={t} icon={<Home className="w-4 h-4" />}
+            title="Datos de la hipoteca" subtitle="Edita cualquier campo para recalcular en cascada" />
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mt-2">
+            <Field t={t} label="Valor inmueble">
+              <CurrencyInput t={t} value={mortgage.propertyValue}
+                onChange={(v) => setMortgage({ ...mortgage, propertyValue: v })} />
+            </Field>
+            <Field t={t} label="Capital pendiente">
+              <CurrencyInput t={t} value={mortgage.pendingCapital}
+                onChange={(v) => setMortgage({ ...mortgage, pendingCapital: v })} />
+            </Field>
+            <Field t={t} label="TIN (%)">
+              <NumberInput t={t} step="0.01" value={mortgage.tin}
+                onChange={(v) => setMortgage({ ...mortgage, tin: v })} suffix="%" />
+            </Field>
+            <Field t={t} label="Cuota mensual">
+              <CurrencyInput t={t} value={mortgage.monthlyPayment}
+                onChange={(v) => setMortgage({ ...mortgage, monthlyPayment: v })} />
+            </Field>
+            <Field t={t} label="Años restantes">
+              <NumberInput t={t} step="1" value={mortgage.remainingYears}
+                onChange={(v) => setMortgage({ ...mortgage, remainingYears: v })} />
+            </Field>
+            <Field t={t} label="Meses restantes">
+              <NumberInput t={t} step="1" value={mortgage.remainingMonths}
+                onChange={(v) => setMortgage({ ...mortgage, remainingMonths: v })} />
+            </Field>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+            <MiniStat t={t} label="Fin estimado del préstamo"
+              value={mortgageCalc.endDate.toLocaleDateString("es-ES", { month: "long", year: "numeric" })} />
+            <MiniStat t={t} label="Intereses totales restantes"
+              value={fmtEUR(mortgageCalc.baseInterest)} tone="rose" />
+            <MiniStat t={t} label="Cuota teórica (sistema francés)"
+              value={fmtEUR(mortgageCalc.theoreticalPayment)}
+              hint="Si difiere de tu cuota actual, revisa TIN/plazo." />
+          </div>
+        </Card>
+      </section>
+
+      {/* HIPOTECA - SIMULADOR */}
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card t={t}>
+          <CardHeader t={t} icon={<Calculator className="w-4 h-4" />}
+            title="Simulador de amortización anticipada"
+            subtitle="Capital extra que destinas a amortizar" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+            <Field t={t} label="Capital extra a aportar">
+              <CurrencyInput t={t} value={extraAmount} onChange={setExtraAmount} />
+            </Field>
+            <Field t={t} label="Modo de amortización">
+              <div className="flex gap-2">
+                <button onClick={() => setAmortMode("plazo")}
+                  className={`flex-1 px-3 py-2 text-xs rounded-lg border transition ${
+                    amortMode === "plazo" ? t.rebalanceActive : t.rebalanceInactive
+                  }`}>Reducir plazo</button>
+                <button onClick={() => setAmortMode("cuota")}
+                  className={`flex-1 px-3 py-2 text-xs rounded-lg border transition ${
+                    amortMode === "cuota" ? t.rebalanceActive : t.rebalanceInactive
+                  }`}>Reducir cuota</button>
+              </div>
+            </Field>
+          </div>
+
+          {mortgageCalc.simResult && mortgageCalc.simResult.mode === "plazo" && (
+            <div className="space-y-3 mt-5">
+              <MiniStat t={t} label="Meses adelantados al final"
+                value={`${mortgageCalc.simResult.monthsSaved} meses`} tone="emerald" />
+              <MiniStat t={t} label="Nueva fecha de fin"
+                value={mortgageCalc.simResult.newEndDate.toLocaleDateString("es-ES", { month: "long", year: "numeric" })} />
+              <MiniStat t={t} label="Ahorro total en intereses"
+                value={fmtEUR(mortgageCalc.simResult.interestSaving)} tone="emerald" />
+              <MiniStat t={t} label="Cuota mensual"
+                value={`${fmtEUR(mortgageCalc.monthlyPayment)} (no cambia)`} />
+            </div>
+          )}
+          {mortgageCalc.simResult && mortgageCalc.simResult.mode === "cuota" && (
+            <div className="space-y-3 mt-5">
+              <MiniStat t={t} label="Nueva cuota mensual"
+                value={fmtEUR(mortgageCalc.simResult.newPayment)} tone="emerald" />
+              <MiniStat t={t} label="Reducción mensual de cuota"
+                value={`−${fmtEUR(mortgageCalc.simResult.paymentReduction)}`} tone="emerald" />
+              <MiniStat t={t} label="Ahorro total en intereses"
+                value={fmtEUR(mortgageCalc.simResult.interestSaving)} tone="emerald" />
+              <MiniStat t={t} label="Plazo"
+                value={`${Math.round(mortgageCalc.totalMonths / 12)} años (no cambia)`} />
+            </div>
+          )}
+          {mortgageCalc.simResult && mortgageCalc.simResult.mode === "liquida" && (
+            <div className="mt-5 p-4 rounded-lg border border-emerald-500/40 bg-emerald-500/10">
+              <div className="text-sm font-medium text-emerald-500">Liquidas la hipoteca por completo</div>
+              <div className="text-xs mt-1">
+                Ahorro total en intereses: <span className="font-semibold">{fmtEUR(mortgageCalc.simResult.interestSaving)}</span>
+              </div>
+            </div>
+          )}
+          {!mortgageCalc.simResult && (
+            <p className={`text-xs ${t.textMuted} mt-4`}>Introduce un capital extra mayor que 0 para ver la simulación.</p>
+          )}
+        </Card>
+
+        {/* COMPARATIVA AMORTIZAR vs INVERTIR */}
+        <Card t={t}>
+          <CardHeader t={t} icon={<ArrowRightLeft className="w-4 h-4" />}
+            title="¿Amortizar o invertir esos €?"
+            subtitle={`Hipoteca al ${fmtPct(mortgage.tin, 2)} TIN vs cartera al ${fmtPct(nominalReturn, 1)} nominal esperado`} />
+
+          <div className="space-y-3 mt-3">
+            <ComparePane t={t} title="Amortizar ahora"
+              detail={`Ahorro garantizado en intereses durante ${mortgageCalc.compare.years.toFixed(1)} años`}
+              value={mortgageCalc.compare.amortGain} tone={mortgageCalc.compare.amortGain >= mortgageCalc.compare.investGain ? "winner" : "neutral"} />
+            <ComparePane t={t} title="Invertir en la cartera Boglehead"
+              detail={`Ganancia esperada (no garantizada) al cabo de ${mortgageCalc.compare.years.toFixed(1)} años`}
+              value={mortgageCalc.compare.investGain} tone={mortgageCalc.compare.investGain > mortgageCalc.compare.amortGain ? "winner" : "neutral"} />
+          </div>
+
+          <div className={`mt-5 p-4 rounded-lg ${t.cardSubtle} border ${t.cardSubtleBorder} text-sm leading-relaxed`}>
+            {(() => {
+              const diff = mortgageCalc.compare.investGain - mortgageCalc.compare.amortGain;
+              const tin = mortgage.tin || 0;
+              const r = nominalReturn || 0;
+              if (Math.abs(diff) < 50) {
+                return <>Ambas opciones son prácticamente equivalentes en términos esperados. Decide según tu tolerancia al riesgo: amortizar es <strong>seguro</strong>, invertir es una <strong>expectativa</strong>.</>;
+              }
+              if (diff > 0) {
+                return <>Matemáticamente, invertir gana por <span className="font-semibold text-emerald-500">{fmtEUR(diff)}</span>. La rentabilidad esperada ({fmtPct(r)}) supera el coste de la deuda ({fmtPct(tin)}). Pero recuerda: el {fmtPct(r)} es expectativa, no garantía. Si te quita el sueño tener deuda, amortizar también es válido.</>;
+              }
+              return <>Matemáticamente, amortizar gana por <span className="font-semibold text-emerald-500">{fmtEUR(-diff)}</span>. El coste de tu deuda ({fmtPct(tin)}) supera la rentabilidad esperada neta ({fmtPct(r)}). Saldar deuda da una rentabilidad garantizada equivalente.</>;
+            })()}
+          </div>
+          <p className={`text-xs ${t.textMuted} mt-3`}>
+            Comparativa simplificada: no incluye fiscalidad de las plusvalías de la cartera ni la deducción por hipoteca anterior a 2013, si aplica.
+          </p>
+        </Card>
+      </section>
+
+      {(editingAccount || addingAccount) && (
+        <AccountModal t={t} account={editingAccount}
+          onClose={() => { setEditingAccount(null); setAddingAccount(false); }}
+          onSave={handleSaveAccount} onDelete={handleDeleteAccount} />
+      )}
+    </div>
+  );
+}
+
+function ComparePane({ t, title, detail, value, tone }) {
+  const winner = tone === "winner";
+  return (
+    <div className={`p-4 rounded-lg border ${winner ? "border-emerald-500/50 bg-emerald-500/10" : `${t.cardSubtle} ${t.cardSubtleBorder}`}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium flex items-center gap-2">
+            {winner && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
+            {title}
+          </div>
+          <div className={`text-xs mt-1 ${t.textMuted}`}>{detail}</div>
+        </div>
+        <div className={`text-lg font-semibold whitespace-nowrap ${winner ? "text-emerald-500" : ""}`}>
+          +{fmtEUR(value)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AccountModal({ t, account, onClose, onSave, onDelete }) {
+  const [form, setForm] = useState(account || { name: "", balance: 0, type: "Corriente" });
+  const isNew = !account;
+  const update = (k, v) => setForm({ ...form, [k]: v });
+  return (
+    <Modal t={t} onClose={onClose} title={isNew ? "Añadir cuenta" : "Editar cuenta"}>
+      <div className="space-y-3">
+        <Field t={t} label="Entidad / nombre">
+          <input value={form.name} onChange={(e) => update("name", e.target.value)} className={inputCls(t)} />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field t={t} label="Saldo (€)">
+            <input type="number" step="0.01" value={form.balance}
+                   onChange={(e) => update("balance", parseFloat(e.target.value) || 0)} className={inputCls(t)} />
+          </Field>
+          <Field t={t} label="Tipo">
+            <select value={form.type || "Corriente"}
+                    onChange={(e) => update("type", e.target.value)} className={inputCls(t)}>
+              <option>Corriente</option><option>Ahorro</option>
+              <option>Remunerada</option><option>Depósito</option><option>Otra</option>
+            </select>
+          </Field>
+        </div>
+      </div>
+      <div className="flex items-center justify-between mt-6">
+        {!isNew ? (
+          <button onClick={() => onDelete(account.id)} className="text-sm text-rose-500 hover:text-rose-400 flex items-center gap-1">
+            <Trash2 className="w-4 h-4" /> Eliminar
+          </button>
+        ) : <span />}
+        <div className="flex gap-2">
+          <button onClick={onClose} className={`px-4 py-2 text-sm rounded-lg ${t.chipBg} border ${t.borderHover}`}>Cancelar</button>
+          <button onClick={() => { if (form.name) onSave({ ...form, balance: parseFloat(form.balance) || 0 }); }}
+            className={`px-4 py-2 text-sm rounded-lg border flex items-center gap-1 ${t.primaryActionStrong}`}>
+            <Save className="w-4 h-4" /> Guardar
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* =========================================================================
+   TAB 3: GASTOS / INGRESOS / HISTÓRICO
+   ========================================================================= */
+function TabCashFlow({ t, transactions, setTransactions, showToast }) {
+  const [filterCat, setFilterCat] = useState("ALL");
+  const [evolCategory, setEvolCategory] = useState("ALIMENTACION");
+  const [uploadOpen, setUploadOpen] = useState(false);
+
+  const tooltipStyle = {
+    background: t.tooltipBg, border: `1px solid ${t.tooltipBorder}`,
+    borderRadius: 8, fontSize: 12, color: t.tooltipText,
+  };
+
+  /* ---------- Análisis ---------- */
+  const analysis = useMemo(() => {
+    // Excluir traspasos internos del flujo de caja
+    const cashflow = transactions.filter(t => t.category !== "TRASPASO");
+
+    // Por mes
+    const byMonth = {};
+    cashflow.forEach(tx => {
+      const k = monthKey(tx.date);
+      if (!byMonth[k]) byMonth[k] = { month: k, income: 0, expenses: 0 };
+      if (tx.amount >= 0) byMonth[k].income += tx.amount;
+      else byMonth[k].expenses += Math.abs(tx.amount);
+    });
+    const monthsArr = Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month));
+    monthsArr.forEach(m => {
+      m.net = m.income - m.expenses;
+      m.savingsRate = m.income > 0 ? ((m.income - m.expenses) / m.income) * 100 : 0;
+      m.label = fmtMonthYear(m.month + "-01");
+    });
+
+    // Mes actual (último mes con datos)
+    const lastMonth = monthsArr[monthsArr.length - 1];
+    const currentIncome = lastMonth?.income || 0;
+    const currentExpenses = lastMonth?.expenses || 0;
+    const savingsRate = currentIncome > 0 ? ((currentIncome - currentExpenses) / currentIncome) * 100 : 0;
+
+    // Gastos por categoría (excluyendo ingresos + traspasos)
+    const expenseCats = {};
+    cashflow.filter(tx => tx.amount < 0).forEach(tx => {
+      if (!expenseCats[tx.category]) expenseCats[tx.category] = 0;
+      expenseCats[tx.category] += Math.abs(tx.amount);
+    });
+    const expensePie = Object.entries(expenseCats)
+      .map(([cat, val]) => ({ name: CATEGORIES[cat]?.label || cat, value: val, color: CATEGORIES[cat]?.color || "#999", cat }))
+      .sort((a, b) => b.value - a.value);
+    const totalExpenses = expensePie.reduce((a, c) => a + c.value, 0);
+
+    // Stacked bar por mes/categoría
+    const stackedData = monthsArr.map(m => {
+      const row = { month: m.label, monthKey: m.month };
+      Object.keys(CATEGORIES).forEach(cat => {
+        if (CATEGORIES[cat].isIncome || CATEGORIES[cat].isTransfer) return;
+        const sum = cashflow.filter(tx => monthKey(tx.date) === m.month && tx.category === cat && tx.amount < 0)
+                            .reduce((a, tx) => a + Math.abs(tx.amount), 0);
+        row[CATEGORIES[cat].label] = sum;
+      });
+      return row;
+    });
+
+    // Evolución de una categoría
+    const catEvolution = monthsArr.map(m => {
+      const value = cashflow.filter(tx => monthKey(tx.date) === m.month && tx.category === evolCategory)
+                            .reduce((a, tx) => a + (tx.amount < 0 ? Math.abs(tx.amount) : tx.amount), 0);
+      return { month: m.label, value };
+    });
+
+    return {
+      monthsArr, currentIncome, currentExpenses, savingsRate,
+      expensePie, totalExpenses, stackedData, catEvolution,
+    };
+  }, [transactions, evolCategory]);
+
+  const handleCategoryChange = (id, newCat) => {
+    setTransactions(transactions.map(tx => tx.id === id ? { ...tx, category: newCat } : tx));
+  };
+
+  /* ---------- Carga simulada CSV ---------- */
+  const handleCsvUpload = () => {
+    const newTxns = [
+      { id: `t${Date.now()}1`, date: "2026-05-21", concept: "Glovo restaurante",  amount: -28.50, account: "BBVA" },
+      { id: `t${Date.now()}2`, date: "2026-05-21", concept: "Mercadona",          amount: -56.20, account: "BBVA" },
+      { id: `t${Date.now()}3`, date: "2026-05-20", concept: "Movistar fibra",    amount: -52.00, account: "Ibercaja" },
+      { id: `t${Date.now()}4`, date: "2026-05-18", concept: "Cabify",            amount: -11.30, account: "BBVA" },
+    ].map(tx => ({ ...tx, category: classifyTransaction(tx.concept) }));
+    setTransactions([...newTxns, ...transactions]);
+    setUploadOpen(false);
+    showToast(`${newTxns.length} movimientos importados`);
+  };
+
+  const filteredTxns = useMemo(() => {
+    if (filterCat === "ALL") return transactions;
+    return transactions.filter(tx => tx.category === filterCat);
+  }, [filterCat, transactions]);
+
+  /* ---------- Categorías para selector ---------- */
+  const evolCategories = Object.keys(CATEGORIES).filter(c => !CATEGORIES[c].isTransfer);
+
+  return (
+    <div className="space-y-10">
+      <div className="flex justify-end -mt-4">
+        <button onClick={() => setUploadOpen(true)}
+                className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg ${t.chipBg} border ${t.borderHover} ${t.chipHover} transition`}>
+          <Upload className="w-4 h-4" /> Importar CSV
+        </button>
+      </div>
+
+      {/* KPIs */}
+      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <KPICard t={t} icon={<ArrowUpRight className="w-4 h-4" />}
+          label="Ingresos mes actual" value={fmtEUR(analysis.currentIncome)}
+          sub={<span className={t.textMuted}>Sin traspasos internos</span>} accent="emerald" />
+        <KPICard t={t} icon={<ArrowDownRight className="w-4 h-4" />}
+          label="Gastos mes actual" value={fmtEUR(analysis.currentExpenses)}
+          sub={<span className={t.textMuted}>Sin traspasos internos</span>} accent="amber" />
+        <KPICard t={t} icon={<PiggyBank className="w-4 h-4" />}
+          label="Tasa de ahorro" value={fmtPct(analysis.savingsRate)}
+          sub={<span className={t.textMuted}>(Ingresos − Gastos) / Ingresos</span>}
+          accent={analysis.savingsRate >= 20 ? "emerald" : analysis.savingsRate >= 0 ? "sky" : "amber"} />
+      </section>
+
+      {/* Ingresos vs Gastos (BarChart) */}
+      <section>
+        <Card t={t}>
+          <CardHeader t={t} icon={<BarChart3 className="w-4 h-4" />}
+            title="Ingresos vs Gastos por mes" subtitle="Evolución del flujo de caja neto, excluyendo traspasos internos" />
+          <ResponsiveContainer width="100%" height={290}>
+            <BarChart data={analysis.monthsArr} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+              <CartesianGrid stroke={t.chartGrid} strokeDasharray="2 4" vertical={false} />
+              <XAxis dataKey="label" stroke={t.chartAxis} fontSize={11} />
+              <YAxis stroke={t.chartAxis} fontSize={11} tickFormatter={(v) => `${(v / 1000).toFixed(1)}k`} />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v) => fmtEUR(v)} />
+              <Legend wrapperStyle={{ fontSize: 12, color: t.referenceText }} />
+              <Bar dataKey="income" name="Ingresos" fill="#10b981" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="expenses" name="Gastos" fill="#f43f5e" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+      </section>
+
+      {/* Donut categorías + Evolución por categoría */}
+      <section className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        <Card t={t} className="lg:col-span-2">
+          <CardHeader t={t} icon={<Activity className="w-4 h-4" />}
+            title="Gastos por categoría"
+            subtitle={`Total: ${fmtEUR(analysis.totalExpenses)}`} />
+          <div className="relative w-full mt-2" style={{ height: 260 }}>
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie data={analysis.expensePie} dataKey="value" cx="50%" cy="50%"
+                     innerRadius={60} outerRadius={95} paddingAngle={2} stroke="none">
+                  {analysis.expensePie.map((d, i) => <Cell key={i} fill={d.color} />)}
+                </Pie>
+                <Tooltip contentStyle={tooltipStyle}
+                         formatter={(v, n, p) => [`${fmtEUR(v)} (${fmtPct((v / analysis.totalExpenses) * 100)})`, n]} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-2 space-y-1.5 text-sm max-h-44 overflow-y-auto">
+            {analysis.expensePie.map(c => (
+              <div key={c.cat} className="flex items-center">
+                <span className="w-2.5 h-2.5 rounded-full mr-2" style={{ background: c.color }} />
+                <span className={`flex-1 ${t.textSubtle}`}>{c.name}</span>
+                <span>{fmtEUR(c.value)}</span>
+                <span className={`text-xs ml-2 w-14 text-right ${t.textMuted}`}>
+                  {analysis.totalExpenses > 0 ? fmtPct((c.value / analysis.totalExpenses) * 100) : "—"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card t={t} className="lg:col-span-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <CardHeader t={t} icon={<LineIcon className="w-4 h-4" />}
+              title="Evolución por categoría"
+              subtitle="Selecciona la categoría para ver su evolución mensual" noMargin />
+            <select value={evolCategory} onChange={(e) => setEvolCategory(e.target.value)}
+              className={`${t.input} border rounded-lg px-3 py-1.5 text-sm focus:outline-none ${t.inputFocusEmerald}`}>
+              {evolCategories.map(c => (
+                <option key={c} value={c}>{CATEGORIES[c].label}</option>
+              ))}
+            </select>
+          </div>
+          <ResponsiveContainer width="100%" height={280}>
+            <LineChart data={analysis.catEvolution} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+              <CartesianGrid stroke={t.chartGrid} strokeDasharray="2 4" vertical={false} />
+              <XAxis dataKey="month" stroke={t.chartAxis} fontSize={11} />
+              <YAxis stroke={t.chartAxis} fontSize={11} tickFormatter={(v) => `${v.toFixed(0)} €`} />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v) => fmtEUR(v)} />
+              <Line type="monotone" dataKey="value" stroke={CATEGORIES[evolCategory]?.color || "#10b981"}
+                    strokeWidth={2.5} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </Card>
+      </section>
+
+      {/* Stacked Bar */}
+      <section>
+        <Card t={t}>
+          <CardHeader t={t} icon={<BarChart3 className="w-4 h-4" />}
+            title="Distribución mensual de gasto por categoría"
+            subtitle="Barras apiladas: detecta qué consume tu presupuesto cada mes" />
+          <ResponsiveContainer width="100%" height={320}>
+            <BarChart data={analysis.stackedData} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+              <CartesianGrid stroke={t.chartGrid} strokeDasharray="2 4" vertical={false} />
+              <XAxis dataKey="month" stroke={t.chartAxis} fontSize={11} />
+              <YAxis stroke={t.chartAxis} fontSize={11} tickFormatter={(v) => `${(v / 1000).toFixed(1)}k`} />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v) => fmtEUR(v)} />
+              <Legend wrapperStyle={{ fontSize: 11, color: t.referenceText }} />
+              {Object.keys(CATEGORIES).filter(c => !CATEGORIES[c].isIncome && !CATEGORIES[c].isTransfer).map(cat => (
+                <Bar key={cat} dataKey={CATEGORIES[cat].label} stackId="g" fill={CATEGORIES[cat].color} />
+              ))}
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+      </section>
+
+      {/* TABLA DE MOVIMIENTOS */}
+      <section>
+        <Card t={t}>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <CardHeader t={t} icon={<Receipt className="w-4 h-4" />}
+              title="Movimientos"
+              subtitle="Cambia la categoría asignada con el selector de la fila" noMargin />
+            <div className="flex items-center gap-2">
+              <Filter className={`w-4 h-4 ${t.textMuted}`} />
+              <select value={filterCat} onChange={(e) => setFilterCat(e.target.value)}
+                className={`${t.input} border rounded-lg px-3 py-1.5 text-xs focus:outline-none ${t.inputFocusEmerald}`}>
+                <option value="ALL">Todas las categorías</option>
+                {Object.keys(CATEGORIES).map(c => <option key={c} value={c}>{CATEGORIES[c].label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className={`text-xs uppercase tracking-wider ${t.textMuted} border-b ${t.border}`}>
+                  <th className="text-left py-3 pr-4 font-normal">Fecha</th>
+                  <th className="text-left py-3 pr-4 font-normal">Concepto</th>
+                  <th className="text-left py-3 pr-4 font-normal">Cuenta</th>
+                  <th className="text-left py-3 pr-4 font-normal">Categoría</th>
+                  <th className="text-right py-3 pr-4 font-normal">Importe</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredTxns.map(tx => {
+                  const cat = CATEGORIES[tx.category] || CATEGORIES.OTROS;
+                  const isTransfer = cat.isTransfer;
+                  return (
+                    <tr key={tx.id} className={`border-b ${t.borderSoft} ${t.cardHoverRow} transition`}>
+                      <td className={`py-3 pr-4 ${t.textSubtle} whitespace-nowrap`}>
+                        {new Date(tx.date).toLocaleDateString("es-ES", { day: "2-digit", month: "short" })}
+                      </td>
+                      <td className="py-3 pr-4 font-medium">{tx.concept}</td>
+                      <td className={`py-3 pr-4 text-xs ${t.textMuted}`}>{tx.account}</td>
+                      <td className="py-3 pr-4">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs"
+                                style={{ background: `${cat.color}1A`, color: cat.color }}>
+                            <span className="w-1.5 h-1.5 rounded-full" style={{ background: cat.color }} />
+                            {cat.label}
+                          </span>
+                          <select value={tx.category}
+                                  onChange={(e) => handleCategoryChange(tx.id, e.target.value)}
+                                  className={`text-xs ${t.input} border rounded px-1.5 py-0.5 ${t.textSubtle} cursor-pointer focus:outline-none ${t.inputFocusEmerald}`}>
+                            {Object.keys(CATEGORIES).map(c => (
+                              <option key={c} value={c}>{CATEGORIES[c].label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </td>
+                      <td className={`py-3 pr-4 text-right font-medium whitespace-nowrap ${
+                        isTransfer ? t.textFaint : tx.amount >= 0 ? "text-emerald-500" : "text-rose-500"
+                      }`}>
+                        {tx.amount >= 0 ? "+" : ""}{fmtEUR(tx.amount, { decimals: 2 })}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filteredTxns.length === 0 && (
+                  <tr><td colSpan={5} className={`py-6 text-center ${t.textMuted}`}>Sin movimientos en esta categoría.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <p className={`text-xs ${t.textMuted} mt-4 leading-relaxed`}>
+            <Info className="w-3 h-3 inline mr-1 mb-0.5" />
+            Los movimientos clasificados como <span className="font-medium">Traspaso Interno</span> se excluyen automáticamente del cálculo de ingresos, gastos y tasa de ahorro para no falsear el flujo real.
+          </p>
+        </Card>
+      </section>
+
+      {uploadOpen && <CsvUploadModal t={t} onClose={() => setUploadOpen(false)} onConfirm={handleCsvUpload} />}
+    </div>
+  );
+}
+
+function CsvUploadModal({ t, onClose, onConfirm }) {
+  const [dragging, setDragging] = useState(false);
+  const handleDrop = (e) => { e.preventDefault(); setDragging(false); onConfirm(); };
+  return (
+    <Modal t={t} onClose={onClose} title="Importar extracto bancario (CSV)">
+      <div
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
+        className={`border-2 border-dashed rounded-xl p-10 text-center transition ${
+          dragging ? "border-emerald-500/60 bg-emerald-500/5" : `${t.border} ${t.cardSubtle}`
+        }`}>
+        <Upload className={`w-10 h-10 mx-auto ${t.textMuted} mb-3`} />
+        <p className={`text-sm ${t.textSubtle} mb-1`}>Arrastra tu CSV aquí</p>
+        <p className={`text-xs ${t.textMuted} mb-4`}>Formato: Fecha, Concepto, Importe</p>
+        <button onClick={() => onConfirm()}
+          className={`px-4 py-2 text-sm rounded-lg border inline-flex items-center gap-2 ${t.primaryActionStrong}`}>
+          <FileText className="w-4 h-4" /> Simular importación
+        </button>
+      </div>
+      <div className={`text-xs ${t.textMuted} mt-4 ${t.cardSubtle} p-3 rounded-lg border ${t.cardSubtleBorder}`}>
+        <Info className="w-3 h-3 inline mr-1 mb-0.5" />
+        Cada movimiento se categoriza automáticamente con keywords. Los conceptos con "traspaso", "transferencia propia" o nombre de tus bancos se marcan como <span className="font-medium">Traspaso Interno</span> y se excluyen del flujo de caja.
+      </div>
+    </Modal>
+  );
+}
+
+/* =========================================================================
+   AUXILIARES COMPARTIDOS
+   ========================================================================= */
+function Card({ t, children, className = "" }) {
+  return <div className={`${t.card} border ${t.borderSoft} rounded-xl p-6 ${className}`}>{children}</div>;
+}
+function CardHeader({ t, icon, title, subtitle, noMargin }) {
+  return (
+    <div className={noMargin ? "" : "mb-2"}>
+      <div className={`flex items-center gap-2 ${t.textSubtle} text-xs uppercase tracking-wider`}>
+        {icon}<span>{title}</span>
+      </div>
+      {subtitle && <p className={`text-sm ${t.textMuted} mt-1`}>{subtitle}</p>}
+    </div>
+  );
+}
+function IconButton({ t, onClick, icon, title }) {
+  return (
+    <button onClick={onClick} title={title}
+      className={`w-9 h-9 grid place-items-center rounded-lg ${t.chipBg} border ${t.borderHover} ${t.chipHover} transition`}>
+      {icon}
+    </button>
+  );
+}
+function TabButton({ t, active, onClick, icon, label }) {
+  return (
+    <button onClick={onClick}
+      className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition ${
+        active ? t.tabActive : t.tabInactive
+      }`}>
+      {icon}{label}
+    </button>
+  );
+}
+function KPICard({ t, icon, label, value, sub, accent = "zinc" }) {
+  const accents = {
+    emerald: "from-emerald-500/10 to-transparent border-emerald-500/20",
+    sky: "from-sky-500/10 to-transparent border-sky-500/20",
+    amber: "from-amber-500/10 to-transparent border-amber-500/20",
+    zinc: "from-transparent to-transparent",
+  };
+  const iconBg = {
+    emerald: "bg-emerald-500/10 text-emerald-500",
+    sky: "bg-sky-500/10 text-sky-500",
+    amber: "bg-amber-500/10 text-amber-500",
+    zinc: t.iconBgZinc,
+  };
+  return (
+    <div className={`relative overflow-hidden rounded-xl border ${t.borderSoft} ${t.card} bg-gradient-to-br ${accents[accent]} p-5`}>
+      <div className="flex items-center justify-between mb-3">
+        <span className={`text-xs uppercase tracking-wider ${t.textMuted}`}>{label}</span>
+        <span className={`w-7 h-7 rounded-md grid place-items-center ${iconBg[accent]}`}>{icon}</span>
+      </div>
+      <div className="text-2xl font-semibold tracking-tight">{value}</div>
+      <div className="text-xs mt-1.5">{sub}</div>
+    </div>
+  );
+}
+function NetBlock({ label, value, t, tone }) {
+  const colors = {
+    emerald: "text-emerald-500",
+    rose: "text-rose-500",
+  };
+  return (
+    <div>
+      <div className={`text-[11px] uppercase tracking-wider ${t.textMuted}`}>{label}</div>
+      <div className={`text-base font-semibold ${tone ? colors[tone] : ""}`}>{value}</div>
+    </div>
+  );
+}
+function FIRESummary({ t, title, fiNumber, progress, monthly, currentCapital, tone }) {
+  const cap = Math.min(100, progress);
+  const colorBar = tone === "emerald" ? "bg-emerald-500" : "bg-sky-500";
+  const colorText = tone === "emerald" ? "text-emerald-500" : "text-sky-500";
+  return (
+    <div className="space-y-4 mt-4">
+      <div className="grid grid-cols-2 gap-3 text-xs">
+        <div className={`p-3 rounded-lg ${t.cardSubtle} border ${t.cardSubtleBorder}`}>
+          <div className={`${t.textMuted} uppercase tracking-wider`}>{title}</div>
+          <div className="text-xl font-semibold mt-1">{fmtEUR(fiNumber)}</div>
+        </div>
+        <div className={`p-3 rounded-lg ${t.cardSubtle} border ${t.cardSubtleBorder}`}>
+          <div className={`${t.textMuted} uppercase tracking-wider`}>Retiro mensual seguro</div>
+          <div className={`text-xl font-semibold mt-1 ${colorText}`}>{fmtEUR(monthly)}</div>
+        </div>
+      </div>
+      <div>
+        <div className="flex items-center justify-between text-xs mb-1.5">
+          <span className={t.textSubtle}>Progreso · {fmtEUR(currentCapital)}</span>
+          <span className={`font-medium ${colorText}`}>{progress.toFixed(1)} %</span>
+        </div>
+        <div className={`h-2 rounded-full ${t.progressTrack} overflow-hidden`}>
+          <div className={`h-full ${colorBar} transition-all`} style={{ width: `${cap}%` }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+function RetirementInputs({ t, config, setConfig }) {
+  return (
+    <div className="grid grid-cols-2 gap-3 my-4">
+      <label className="text-xs">
+        <span className={`${t.textMuted} uppercase tracking-wider`}>Gastos anuales en retiro</span>
+        <div className="relative mt-1">
+          <input type="number" value={config.annualRetirementExpenses}
+            onChange={(e) => setConfig({ ...config, annualRetirementExpenses: parseFloat(e.target.value) || 0 })}
+            className={`w-full ${t.input} border rounded-lg px-3 py-2 pr-8 text-sm focus:outline-none ${t.inputFocusEmerald}`} />
+          <span className={`absolute right-3 top-2 ${t.textMuted}`}>€</span>
+        </div>
+      </label>
+      <label className="text-xs">
+        <span className={`${t.textMuted} uppercase tracking-wider`}>Tasa retiro (SWR)</span>
+        <div className="relative mt-1">
+          <input type="number" step="0.1" value={config.swrRate}
+            onChange={(e) => setConfig({ ...config, swrRate: parseFloat(e.target.value) || 0 })}
+            className={`w-full ${t.input} border rounded-lg px-3 py-2 pr-8 text-sm focus:outline-none ${t.inputFocusEmerald}`} />
+          <span className={`absolute right-3 top-2 ${t.textMuted}`}>%</span>
+        </div>
+      </label>
+    </div>
+  );
+}
+function MiniStat({ t, label, value, tone, hint }) {
+  const toneClass = tone === "emerald" ? "text-emerald-500" : tone === "rose" ? "text-rose-500" : "";
+  return (
+    <div className={`p-3 rounded-lg ${t.cardSubtle} border ${t.cardSubtleBorder}`}>
+      <div className={`text-xs uppercase tracking-wider ${t.textMuted}`}>{label}</div>
+      <div className={`text-lg font-semibold mt-1 ${toneClass}`}>{value}</div>
+      {hint && <div className={`text-xs ${t.textMuted} mt-1`}>{hint}</div>}
+    </div>
+  );
+}
+
+/* ----- Inputs ----- */
+function CurrencyInput({ t, value, onChange }) {
+  return (
+    <div className="relative">
+      <input type="number" step="0.01" value={value ?? 0}
+        onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+        className={`w-full ${t.input} border rounded-lg px-3 py-2 pr-8 text-sm focus:outline-none ${t.inputFocusEmerald}`} />
+      <span className={`absolute right-3 top-2 ${t.textMuted}`}>€</span>
+    </div>
+  );
+}
+function NumberInput({ t, value, onChange, step = "1", suffix }) {
+  return (
+    <div className="relative">
+      <input type="number" step={step} value={value ?? 0}
+        onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+        className={`w-full ${t.input} border rounded-lg px-3 py-2 ${suffix ? "pr-8" : ""} text-sm focus:outline-none ${t.inputFocusEmerald}`} />
+      {suffix && <span className={`absolute right-3 top-2 ${t.textMuted}`}>{suffix}</span>}
+    </div>
+  );
+}
+function Field({ t, label, children }) {
+  return (
+    <label className="block text-xs">
+      <span className={`${t.textMuted} uppercase tracking-wider`}>{label}</span>
+      <div className="mt-1">{children}</div>
+    </label>
+  );
+}
+function inputCls(t) {
+  return `w-full ${t.input} border rounded-lg px-3 py-2 text-sm focus:outline-none ${t.inputFocusEmerald}`;
+}
+
+/* ----- Modales: Fund / Upload / Settings ----- */
+function FundModal({ t, fund, onClose, onSave, onDelete }) {
+  const [form, setForm] = useState(fund || {
+    name: "", isin: "", assetClass: "RV_GLOBAL",
+    invested: 0, marketValue: 0, ter: 0.2, monthlyContrib: 0,
+  });
+  const isNew = !fund;
+  const update = (k, v) => setForm({ ...form, [k]: v });
+  const handleSubmit = () => {
+    if (!form.name) return;
+    onSave({
+      ...form,
+      invested: parseFloat(form.invested) || 0,
+      marketValue: parseFloat(form.marketValue) || 0,
+      ter: parseFloat(form.ter) || 0,
+      monthlyContrib: parseFloat(form.monthlyContrib) || 0,
+    });
+  };
+  return (
+    <Modal t={t} onClose={onClose} title={isNew ? "Añadir fondo" : "Editar fondo"}>
+      <div className="space-y-4">
+        <Field t={t} label="Nombre del fondo">
+          <input value={form.name} onChange={(e) => update("name", e.target.value)} className={inputCls(t)} />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field t={t} label="ISIN">
+            <input value={form.isin} onChange={(e) => update("isin", e.target.value)} className={inputCls(t)} />
+          </Field>
+          <Field t={t} label="Clase de activo">
+            <select value={form.assetClass} onChange={(e) => update("assetClass", e.target.value)} className={inputCls(t)}>
+              {Object.keys(ASSET_CLASSES).map(k => (
+                <option key={k} value={k}>{ASSET_CLASSES[k].label}</option>
+              ))}
+            </select>
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field t={t} label="Capital invertido (€)">
+            <input type="number" step="0.01" value={form.invested}
+                   onChange={(e) => update("invested", e.target.value)} className={inputCls(t)} />
+          </Field>
+          <Field t={t} label="Valor de mercado (€)">
+            <input type="number" step="0.01" value={form.marketValue}
+                   onChange={(e) => update("marketValue", e.target.value)} className={inputCls(t)} />
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field t={t} label="TER (%)">
+            <input type="number" step="0.01" value={form.ter}
+                   onChange={(e) => update("ter", e.target.value)} className={inputCls(t)} />
+          </Field>
+          <Field t={t} label="Aportación mensual (€)">
+            <input type="number" step="1" value={form.monthlyContrib}
+                   onChange={(e) => update("monthlyContrib", e.target.value)} className={inputCls(t)} />
+          </Field>
+        </div>
+        {!isNew && fund.invested > 0 && (
+          <div className={`text-xs ${t.textMuted} ${t.cardSubtle} p-3 rounded-lg border ${t.cardSubtleBorder}`}>
+            Rentabilidad actual:{" "}
+            <span className={form.marketValue >= form.invested ? "text-emerald-500" : "text-rose-500"}>
+              {((form.marketValue - form.invested) / form.invested * 100).toFixed(2)}%
+            </span>
+          </div>
+        )}
+      </div>
+      <div className="flex items-center justify-between mt-6">
+        {!isNew ? (
+          <button onClick={() => onDelete(fund.id)} className="text-sm text-rose-500 hover:text-rose-400 flex items-center gap-1">
+            <Trash2 className="w-4 h-4" /> Eliminar
+          </button>
+        ) : <span />}
+        <div className="flex gap-2">
+          <button onClick={onClose} className={`px-4 py-2 text-sm rounded-lg ${t.chipBg} border ${t.borderHover}`}>Cancelar</button>
+          <button onClick={handleSubmit} className={`px-4 py-2 text-sm rounded-lg border flex items-center gap-1 ${t.primaryActionStrong}`}>
+            <Save className="w-4 h-4" /> Guardar
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function UploadModal({ t, onClose, onConfirm }) {
+  const [dragging, setDragging] = useState(false);
+  const handleDrop = (e) => { e.preventDefault(); setDragging(false); onConfirm(); };
+  return (
+    <Modal t={t} onClose={onClose} title="Carga masiva de fondos (CSV / Excel)">
+      <div
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
+        className={`border-2 border-dashed rounded-xl p-10 text-center transition ${
+          dragging ? "border-emerald-500/60 bg-emerald-500/5" : `${t.border} ${t.cardSubtle}`
+        }`}>
+        <Upload className={`w-10 h-10 mx-auto ${t.textMuted} mb-3`} />
+        <p className={`text-sm ${t.textSubtle} mb-1`}>Arrastra tu archivo CSV o Excel aquí</p>
+        <p className={`text-xs ${t.textMuted} mb-4`}>o pulsa el botón para simular una importación</p>
+        <button onClick={() => onConfirm()}
+          className={`px-4 py-2 text-sm rounded-lg border inline-flex items-center gap-2 ${t.primaryActionStrong}`}>
+          <FileText className="w-4 h-4" /> Simular importación
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function SettingsModal({ t, config, setConfig, onClose }) {
+  const [local, setLocal] = useState(config);
+  const update = (k, v) => setLocal({ ...local, [k]: v });
+  const updateTarget = (k, v) => setLocal({
+    ...local, targetAllocation: { ...local.targetAllocation, [k]: parseFloat(v) || 0 }
+  });
+  const totalTarget = Object.values(local.targetAllocation).reduce((a, b) => a + b, 0);
+  return (
+    <Modal t={t} onClose={onClose} title="Ajustes del panel" wide>
+      <div className="space-y-6">
+        <section>
+          <h4 className={`text-xs uppercase tracking-wider ${t.textMuted} mb-3`}>Personales</h4>
+          <div className="grid grid-cols-3 gap-3">
+            <Field t={t} label="Edad">
+              <input type="number" value={local.age}
+                     onChange={(e) => update("age", parseInt(e.target.value) || 0)} className={inputCls(t)} />
+            </Field>
+            <Field t={t} label="Edad jubilación">
+              <input type="number" value={local.retirementAge}
+                     onChange={(e) => update("retirementAge", parseInt(e.target.value) || 0)} className={inputCls(t)} />
+            </Field>
+            <Field t={t} label="Años hasta jubilación">
+              <input type="number" value={local.yearsToRetirement}
+                     onChange={(e) => update("yearsToRetirement", parseInt(e.target.value) || 0)} className={inputCls(t)} />
+            </Field>
+          </div>
+        </section>
+        <section>
+          <h4 className={`text-xs uppercase tracking-wider ${t.textMuted} mb-3`}>Asset Allocation objetivo (%)</h4>
+          <div className="grid grid-cols-3 gap-3">
+            {Object.keys(ASSET_CLASSES).map(k => (
+              <Field t={t} key={k} label={ASSET_CLASSES[k].short}>
+                <input type="number" step="1" value={local.targetAllocation[k]}
+                       onChange={(e) => updateTarget(k, e.target.value)} className={inputCls(t)} />
+              </Field>
+            ))}
+          </div>
+          <div className={`text-xs mt-2 ${totalTarget === 100 ? "text-emerald-500" : "text-amber-500"}`}>
+            Suma: {totalTarget}% {totalTarget !== 100 && "(debería ser 100)"}
+          </div>
+          <Field t={t} label="Banda de rebalanceo (±%)">
+            <input type="number" step="0.5" value={local.rebalanceBand}
+                   onChange={(e) => update("rebalanceBand", parseFloat(e.target.value) || 0)} className={inputCls(t)} />
+          </Field>
+        </section>
+        <section>
+          <h4 className={`text-xs uppercase tracking-wider ${t.textMuted} mb-3`}>Pensión pública</h4>
+          <div className="grid grid-cols-2 gap-3">
+            <Field t={t} label="Pensión mensual (€ de hoy)">
+              <input type="number" step="0.01" value={local.pensionMonthlyDeflated}
+                     onChange={(e) => update("pensionMonthlyDeflated", parseFloat(e.target.value) || 0)} className={inputCls(t)} />
+            </Field>
+            <Field t={t} label="Año inicio pensión">
+              <input type="number" value={local.pensionRetirementYear}
+                     onChange={(e) => update("pensionRetirementYear", parseInt(e.target.value) || 0)} className={inputCls(t)} />
+            </Field>
+          </div>
+        </section>
+      </div>
+      <div className="flex justify-end gap-2 mt-6">
+        <button onClick={onClose} className={`px-4 py-2 text-sm rounded-lg ${t.chipBg} border ${t.borderHover}`}>Cancelar</button>
+        <button onClick={() => { setConfig(local); onClose(); }}
+          className={`px-4 py-2 text-sm rounded-lg border flex items-center gap-1 ${t.primaryActionStrong}`}>
+          <Save className="w-4 h-4" /> Guardar ajustes
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function Modal({ t, children, onClose, title, wide }) {
+  return (
+    <div className={`fixed inset-0 z-50 grid place-items-center ${t.modalOverlay} backdrop-blur-sm p-4`} onClick={onClose}>
+      <div
+        className={`${t.modalBg} border rounded-xl p-6 w-full ${wide ? "max-w-2xl" : "max-w-lg"} max-h-[90vh] overflow-y-auto`}
+        onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-lg font-semibold">{title}</h3>
+          <button onClick={onClose} className={`${t.textMuted} hover:opacity-80`}>
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+
+createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
